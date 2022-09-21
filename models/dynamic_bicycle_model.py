@@ -5,12 +5,13 @@ def dynamic_bicycle_model(state, u, Frx, Ffx, Ffy, Fry, mass=1212.6160, Iz=1560.
     """ from: AMZ Driverless: The Full Autonomous Racing System
     model reference point: CoG
     longitudinal drive-train forces act on the center of gravity
-    :param state: [x, y, yaw, vx, vy, yaw rate, steering angle]
-    :param u: [drive force, steering speed]
-    :param mass: vehicle mass
-    :param Iz: Moment of inertia
-    :param lf:
-    :param lr:
+    :param state: [x - position [m], y - position [m], yaw - orientation [rad], vx - velocity in x [m/s], vy - velocity in y [m/s],
+    yaw rate - speed of car rotation [rad/s], steering angle [rad]]
+    :param u: [drive force [N], steering speed [rad/s]]
+    :param mass: Vehicle mass [Kg]
+    :param Iz: Moment of inertia [Kg * m^2]
+    :param lf: Distance between center of mass and front axle [m]
+    :param lr: Distance between center of mass and front axle [m]
     :return: f: dx/dt = f(x, u)
     """
 
@@ -38,18 +39,18 @@ def calc_tire_forces(state, u, lf=0.88392, lr=1.50876, Df=3714.8218, Cf=5.9139, 
     load transfer can be neglected, combined slip can be neglected
     :param state: [x, y, yaw, vx, vy, yaw rate, steering angle]
     :param u: [drive force, steering speed]
-    :param lf:
-    :param lr:
-    :param Df:
-    :param Cf:
-    :param Bf:
-    :param Dr:
-    :param Cr:
-    :param Br:
-    :param Cm: Motor constant (1.0)
-    :param Cr0: Rolling resistance
-    :param Cr2: Drag
-    :param torque_split: <0, 1> Split of torque between front and rear tire. (F1/10 ... 0.5)
+    :param lf: Distance between center of mass and front axle [m]
+    :param lr: Distance between center of mass and front axle [m]
+    :param Df: Front tire, fitting constant D of Pacejka tire model [None]
+    :param Cf: Front tire, fitting constant C of Pacejka tire model [None]
+    :param Bf: Front tire, fitting constant B of Pacejka tire model [None]
+    :param Dr: Rear tire, fitting constant D of Pacejka tire model [None]
+    :param Cr: Rear tire, fitting constant C of Pacejka tire model [None]
+    :param Br: Rear tire, fitting constant B of Pacejka tire model [None]
+    :param Cm: Motor constant [None]
+    :param Cr0: Rolling resistance [N]
+    :param Cr2: Drag [N]
+    :param torque_split: <0, 1> Split of torque between front and rear tire. [None]
     :return:
     """
     x, y, yaw, vx, vy, yaw_rate, steer_angle = state
