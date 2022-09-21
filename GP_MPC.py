@@ -65,10 +65,10 @@ class MPCConfigGP:
     TK: int = 10  # finite time horizon length kinematic
 
     Rk: list = field(
-        default_factory=lambda: np.diag([0.0000005, 10.0])
+        default_factory=lambda: np.diag([0.000005, 20.0])
     )  # input cost matrix, penalty for inputs - [accel, steering_speed]
     Rdk: list = field(
-        default_factory=lambda: np.diag([0.0000001, 10.0])
+        default_factory=lambda: np.diag([0.0000005, 20.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
         default_factory=lambda: np.diag([13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0])
@@ -164,7 +164,7 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     if constant_speed:
         # waypoints[:, 5] = waypoints[:, 5] * 2.0
-        waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 12.0
+        waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 11.2
 
     # init controllers
     planner_pp = PurePursuitPlanner(conf, 0.805975 + 1.50876)  # 0.805975 + 1.50876
@@ -216,7 +216,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     last_render = 0
 
     # init logger
-    log = {'time': []}
+    log = {'time': [], 'vx': [], 'v_ref': []}
 
     # calc number of sim steps per one control step
     num_of_sim_steps = int(control_step / (env.timestep * 1000.0))
@@ -262,17 +262,21 @@ def main():  # after launching this you can run visualization.py to see the resu
                 draw.predicted_traj_show = np.array([mpc_pred_x, mpc_pred_y]).T
 
             if obs['lap_counts'][0] == 0:
-                u[0] += np.random.randn(1)[0] * 0.0
-                u[1] += np.random.randn(1)[0] * 0.0
+                u[0] += np.random.randn(1)[0] * 0.1
+                u[1] += np.random.randn(1)[0] * 0.04
 
-            if obs['lap_counts'][0] == 1:
-                u[0] += np.random.randn(1)[0] * 0.01
-                u[1] += np.random.randn(1)[0] * 0.01
 
         else:
             u, mpc_ref_path_x, mpc_ref_path_y, mpc_pred_x, mpc_pred_y, mpc_ox, mpc_oy = planner_gp_mpc.plan(
                 vehicle_state)
             u[0] = u[0] / planner_gp_mpc.config.MASS  # Force to acceleration
+
+            if waypoints[:, 5][0] <= 11.6:
+                u[0] += np.random.randn(1)[0] * 0.2
+                u[1] += np.random.randn(1)[0] * 0.00
+            elif waypoints[:, 5][0] < 15.0:
+                u[0] += np.random.randn(1)[0] * 0.1
+                u[1] += np.random.randn(1)[0] * 0.0
 
             # draw predicted states and reference trajectory
             draw.reference_traj_show = np.array([mpc_ref_path_x, mpc_ref_path_y]).T
@@ -284,8 +288,8 @@ def main():  # after launching this you can run visualization.py to see the resu
             env.params['tire_p_dy1'] = tpadata[str(min_id)][0]  # mu_y
             env.params['tire_p_dx1'] = tpadata[str(min_id)][0] * 1.1  # mu_x
         else:
-            env.params['tire_p_dy1'] = 1.0  # mu_y
-            env.params['tire_p_dx1'] = 1.1  # mu_x
+            env.params['tire_p_dy1'] = 0.7  # mu_y
+            env.params['tire_p_dx1'] = 0.8  # mu_x
 
         # Simulation step
         step_reward = 0.0
@@ -293,6 +297,14 @@ def main():  # after launching this you can run visualization.py to see the resu
             obs, rew, _, info = env.step(np.array([[u[1], u[0]]]))
             step_reward += rew
         laptime += step_reward
+
+        if obs['lap_counts'][0] > 0 and waypoints[:, 5][0] < 15.0:
+            waypoints[:, 5] += np.ones((waypoints[:, 5].shape[0],)) * 0.0004
+
+        # Logging
+        log['time'].append(laptime)
+        log['vx'].append(env.sim.agents[0].state[3])
+        log['v_ref'].append(waypoints[:, 5][0])
 
         # Rendering
         last_render += 1
@@ -304,7 +316,7 @@ def main():  # after launching this you can run visualization.py to see the resu
         u[0] = u[0] * planner_gp_mpc.config.MASS  # Acceleration to force
 
         gather_data += 1
-        if gather_data >= 100:
+        if gather_data >= 15:
             vy_transition = env.sim.agents[0].state[10] + np.random.randn(1)[0] * 0.0000001 - vehicle_state[4]
             vx_transition = env.sim.agents[0].state[3] + np.random.randn(1)[0] * 0.0000001 - vehicle_state[2]
             yaw_rate_transition = env.sim.agents[0].state[5] + np.random.randn(1)[0] * 0.0000001 - vehicle_state[5]
@@ -316,7 +328,8 @@ def main():  # after launching this you can run visualization.py to see the resu
             planner_gp_mpc.model.add_new_datapoint(X_sample, Y_sample)
             gather_data = 0
 
-        if obs['lap_counts'][0] == 2 and gp_model_trained == 0 or obs['lap_counts'][0] == 3 and gp_model_trained == 1:
+        # if obs['lap_counts'][0] == 2 and gp_model_trained == 0 or obs['lap_counts'][0] == 3 and gp_model_trained == 1:
+        if obs['lap_counts'][0] - 1 == gp_model_trained:
             print(len(planner_gp_mpc.model.vx))
             gp_model_trained += 1
             print("GP training...")
@@ -325,8 +338,12 @@ def main():  # after launching this you can run visualization.py to see the resu
             # obs, step_reward, done, info = env.reset(np.array([[conf.sx * 10, conf.sy * 10, conf.stheta, 0.0, 10.0,
             # 0.0, 0.0]]))
             print('Model used: GP')
+            print('Reference speed: %f' % waypoints[:, 5][0])
 
-        if obs['lap_counts'][0] == 4:
+            with open('log01', 'w') as f:
+                json.dump(log, f)
+
+        if obs['lap_counts'][0] == 20:
             done = 1
 
     print('Sim elapsed time:', laptime, 'Real elapsed time:', time.time() - start)
