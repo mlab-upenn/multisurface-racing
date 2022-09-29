@@ -357,7 +357,8 @@ class STMPCPlanner:
 
         # Solve the optimization problem in CVXPY
         # Solver selections: cvxpy.OSQP; cvxpy.GUROBI
-        self.MPC_prob.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
+        # self.MPC_prob.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
+        self.MPC_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.1, eps_abs=0.001, eps_rel=0.001, verbose=False, warm_start=True)
 
         if self.MPC_prob.status == cvxpy.OPTIMAL or self.MPC_prob.status == cvxpy.OPTIMAL_INACCURATE:
             o_states = self.xk.value
