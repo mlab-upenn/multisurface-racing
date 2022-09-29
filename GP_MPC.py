@@ -216,7 +216,10 @@ def main():  # after launching this you can run visualization.py to see the resu
     last_render = 0
 
     # init logger
-    log = {'time': [], 'vx': [], 'v_ref': []}
+    log = {'time': [], 'x': [], 'y': [], 'lap_n': [], 'vx': [], 'v_ref': [], 'vx_mean': [], 'vx_var': [], 'vy_mean': [],
+           'vy_var': [], 'theta_mean': [], 'theta_var': [], 'true_vx': [], 'true_vy': [], 'true_yaw_rate': [], 'tracking_error': []}
+
+    log_dataset = {'X0': [], 'X1': [], 'X2': [], 'X3': [], 'X4': [], 'X5': [], 'Y0': [], 'Y1': [], 'Y2': []}
 
     # calc number of sim steps per one control step
     num_of_sim_steps = int(control_step / (env.timestep * 1000.0))
@@ -303,8 +306,21 @@ def main():  # after launching this you can run visualization.py to see the resu
 
         # Logging
         log['time'].append(laptime)
+        log['lap_n'].append(obs['lap_counts'][0])
+        log['x'].append(env.sim.agents[0].state[0])
+        log['y'].append(env.sim.agents[0].state[1])
         log['vx'].append(env.sim.agents[0].state[3])
         log['v_ref'].append(waypoints[:, 5][0])
+        log['vx_mean'].append(float(mean[0]))
+        log['vx_var'].append(float(abs(mean[0] - lower[0])))
+        log['vy_mean'].append(float(mean[1]))
+        log['vy_var'].append(float(abs(mean[1] - lower[1])))
+        log['theta_mean'].append(float(mean[2]))
+        log['theta_var'].append(float(abs(mean[2] - lower[2])))
+        log['true_vx'].append(env.sim.agents[0].state[3] - vehicle_state[2])
+        log['true_vy'].append(env.sim.agents[0].state[10] - vehicle_state[4])
+        log['true_yaw_rate'].append(env.sim.agents[0].state[5] - vehicle_state[5])
+        log['tracking_error'].append(tracking_error)
 
         # Rendering
         last_render += 1
@@ -342,6 +358,8 @@ def main():  # after launching this you can run visualization.py to see the resu
 
             with open('log01', 'w') as f:
                 json.dump(log, f)
+            # with open('dataset_1_1', 'w') as f:
+            #     json.dump(log_dataset, f)
 
         if obs['lap_counts'][0] == 20:
             done = 1
