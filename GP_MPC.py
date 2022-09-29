@@ -356,6 +356,16 @@ def main():  # after launching this you can run visualization.py to see the resu
             print('Model used: GP')
             print('Reference speed: %f' % waypoints[:, 5][0])
 
+            log_dataset['X0'] = planner_gp_mpc.model.x_measurements[0]
+            log_dataset['X1'] = planner_gp_mpc.model.x_measurements[1]
+            log_dataset['X2'] = planner_gp_mpc.model.x_measurements[2]
+            log_dataset['X3'] = planner_gp_mpc.model.x_measurements[3]
+            log_dataset['X4'] = planner_gp_mpc.model.x_measurements[4]
+            log_dataset['X5'] = planner_gp_mpc.model.x_measurements[5]
+            log_dataset['Y0'] = planner_gp_mpc.model.y_measurements[0]
+            log_dataset['Y1'] = planner_gp_mpc.model.y_measurements[1]
+            log_dataset['Y2'] = planner_gp_mpc.model.y_measurements[2]
+
             with open('log01', 'w') as f:
                 json.dump(log, f)
             # with open('dataset_1_1', 'w') as f:
