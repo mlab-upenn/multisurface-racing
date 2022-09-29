@@ -331,11 +331,26 @@ def main():  # after launching this you can run visualization.py to see the resu
         # learning GPs
         u[0] = u[0] * planner_gp_mpc.config.MASS  # Acceleration to force
 
+        if gp_model_trained:
+            if abs((mean[0] - lower[0]) / planner_gp_mpc.model.scaler_y[0].std) >= 2.0 or abs((mean[1] - lower[1]) / planner_gp_mpc.model.scaler_y[1].std) >= 2.0 or abs((mean[2] - lower[2]) / planner_gp_mpc.model.scaler_y[2].std) >= 2.0:
+                gather_data_every = 3
+            elif 0.95 <= abs((mean[0] - lower[0]) / planner_gp_mpc.model.scaler_y[0].std) < 2.0 or 0.95 <= abs((mean[1] - lower[1]) / planner_gp_mpc.model.scaler_y[1].std) < 2.0 or 0.95 <= abs((mean[2] - lower[2]) / planner_gp_mpc.model.scaler_y[2].std) < 2.0:
+                gather_data_every = 6
+            else:
+                if abs(env.sim.agents[0].state[2]) > 0.09:
+                    gather_data_every = 1
+                else:
+                    gather_data_every = 20
+        else:
+            gather_data_every = 5
+
+        print(gather_data_every)
+
         gather_data += 1
-        if gather_data >= 15:
-            vy_transition = env.sim.agents[0].state[10] + np.random.randn(1)[0] * 0.0000001 - vehicle_state[4]
-            vx_transition = env.sim.agents[0].state[3] + np.random.randn(1)[0] * 0.0000001 - vehicle_state[2]
-            yaw_rate_transition = env.sim.agents[0].state[5] + np.random.randn(1)[0] * 0.0000001 - vehicle_state[5]
+        if gather_data >= gather_data_every:
+            vx_transition = env.sim.agents[0].state[3] + np.random.randn(1)[0] * 0.001 - vehicle_state[2]
+            vy_transition = env.sim.agents[0].state[10] + np.random.randn(1)[0] * 0.001 - vehicle_state[4]
+            yaw_rate_transition = env.sim.agents[0].state[5] + np.random.randn(1)[0] * 0.001 - vehicle_state[5]
 
             Y_sample = np.array([float(vx_transition), float(vy_transition), float(yaw_rate_transition)])
             X_sample = np.array([float(vehicle_state[2]), float(vehicle_state[4]),
