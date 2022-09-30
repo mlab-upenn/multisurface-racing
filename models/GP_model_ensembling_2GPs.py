@@ -24,6 +24,7 @@ class GPEnsembleModels2GPs:
         self.gp_model2 = GPEnsembleModel(config)
 
         self.w = np.array(0.5)
+        self.w_opt_prob_intiialized = False
 
     def clip_input(self, u):
         # u matrix Nx2
@@ -127,22 +128,38 @@ class GPEnsembleModels2GPs:
         scaled_mean = self.w * scaled_mean1 + (1.0 - self.w) * scaled_mean2
         scaled_lower = self.w * scaled_lower1 + (1.0 - self.w) * scaled_lower2
         scaled_upper = self.w * scaled_upper1 + (1.0 - self.w) * scaled_upper2
-        return scaled_mean, scaled_lower, scaled_upper
+        return scaled_mean, scaled_lower, scaled_upper, scaled_mean1, scaled_mean2
 
-    def compute_w(self, Y_real, vehicle_state, u):
-
-        mean1, lower1, upper1 = self.gp_model1.scale_and_predict_model_step(vehicle_state, u)
-        mean2, lower2, upper2 = self.gp_model2.scale_and_predict_model_step(vehicle_state, u)
-
+    def init_w_opt_prob(self, Y_real, mean1, mean2, u):
+        self.w_opt_prob_intiialized = True
         F = np.array([mean1, mean2]).squeeze().T
+        
 
         # Create problem
-        w = cvxpy.Variable((2, 1))
+        self.w_var = cvxpy.Variable((2, 1))
+        self.F_par = cvxpy.Parameter(F.shape)
+        self.Y_par = cvxpy.Parameter((3, 1))
 
-        objective = cvxpy.sum_squares(Y_real.reshape((3, 1)) - F @ w)
-        constraints = [w >= 0.0, w <= 1.0, w[0] + w[1] == 1.0]
-        prob = cvxpy.Problem(cvxpy.Minimize(objective), constraints)
-        prob.solve(solver=cvxpy.OSQP)
-        print(w.value)
-        self.w = w.value[0]
+        self.F_par.value = F
+        self.Y_par.value = Y_real.reshape((3, 1))
+
+        objective = cvxpy.sum_squares(self.Y_par - self.F_par @ self.w_var)
+        constraints = [self.w_var >= 0.0, self.w_var <= 1.0, self.w_var[0] + self.w_var[1] == 1.0]
+        self.w_prob = cvxpy.Problem(cvxpy.Minimize(objective), constraints)
+        self.w_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.1, eps_abs=0.001, eps_rel=0.001, verbose=False, warm_start=True)
+        print(self.w_var.value)
+        self.w = self.w_var.value[0]
+
+    def compute_w(self, Y_real, mean1, mean2, u):
+        if self.w_opt_prob_intiialized:
+            self.w_opt_prob_intiialized = True
+            F = np.array([mean1, mean2]).squeeze().T
+
+            self.F_par.value = F
+            self.Y_par.value = Y_real.reshape((3, 1))
+            self.w_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.1, eps_abs=0.001, eps_rel=0.001, verbose=False, warm_start=True)
+            print(self.w_var.value)
+            self.w = self.w_var.value[0]
+        else:
+            return self.init_w_opt_prob(Y_real, mean1, mean2, u)
 

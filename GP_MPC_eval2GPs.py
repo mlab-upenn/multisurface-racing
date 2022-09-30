@@ -317,8 +317,10 @@ def main():  # after launching this you can run visualization.py to see the resu
         gp_models_trained = 1
 
     gather_data = 0
+    prev_mean1 = None
+    prev_mean2 = None
     while not done:
-
+        t0 = time.time()
         # Regulator step MPC
         vehicle_state = np.array([env.sim.agents[0].state[0],
                                   env.sim.agents[0].state[1],
@@ -354,7 +356,7 @@ def main():  # after launching this you can run visualization.py to see the resu
                                                                      np.array([mpc_ref_path_x[0:2], mpc_ref_path_y[0:2]]).T)
         if gp_models_trained:
             with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                mean, lower, upper = planner_gp_mpc.model.scale_and_predict_model_step(vehicle_state, [u[0] * planner_gp_mpc.config.MASS, u[1]])
+                mean, lower, upper, prev_mean1, prev_mean2 = planner_gp_mpc.model.scale_and_predict_model_step(vehicle_state, [u[0] * planner_gp_mpc.config.MASS, u[1]])
 
         # set correct friction to the environment
         if use_dyn_friction:
@@ -364,6 +366,7 @@ def main():  # after launching this you can run visualization.py to see the resu
         else:
             env.params['tire_p_dy1'] = 0.4  # mu_y
             env.params['tire_p_dx1'] = 0.5  # mu_x
+        print(f'Time taken until sim {time.time() - t0}')
 
         # Simulation step
         step_reward = 0.0
@@ -378,8 +381,7 @@ def main():  # after launching this you can run visualization.py to see the resu
         yaw_rate_transition = env.sim.agents[0].state[5] + np.random.randn(1)[0] * 0.001 - vehicle_state[5]
 
         Y_real = np.array([float(vx_transition), float(vy_transition), float(yaw_rate_transition)])
-
-        planner_gp_mpc.model.compute_w(Y_real, vehicle_state, np.array([u[0] * planner_gp_mpc.config.MASS, u[1]]))
+        planner_gp_mpc.model.compute_w(Y_real, prev_mean1, prev_mean2, np.array([u[0] * planner_gp_mpc.config.MASS, u[1]]))
 
         # Logging
         log['time'].append(laptime)
