@@ -5,7 +5,7 @@ from torch.autograd.functional import jacobian
 import os
 import time
 import cvxpy
-from models.GP_model_ensembleing import GPEnsembleModel
+from models.GP_model_ensembling import GPEnsembleModel
 
 np.set_printoptions(precision=4, suppress=True)
 

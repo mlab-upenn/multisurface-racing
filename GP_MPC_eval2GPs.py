@@ -7,7 +7,7 @@ from regulators.pure_pursuit import *
 from regulators.path_follow_mpc import *
 from models.kinematic import KinematicModel
 from models.extended_kinematic import ExtendedKinematicModel
-from models.GP_model_ensembleing_2GPs import GPEnsembleModels2GPs
+from models.GP_model_ensembling_2GPs import GPEnsembleModels2GPs
 from helpers.closest_point import *
 import torch
 import gpytorch
@@ -143,13 +143,13 @@ def main():  # after launching this you can run visualization.py to see the resu
     work = {'mass': 1225.88, 'lf': 0.80597534362552312, 'tlad': 10.6461887897713965, 'vgain': 1.0}
 
     # Load map config file
-    with open('config_%s.yaml' % map_name) as file:
+    with open('configs/config_%s.yaml' % map_name) as file:
         conf_dict = yaml.load(file, Loader=yaml.FullLoader)
     conf = Namespace(**conf_dict)
 
     if use_dyn_friction:
-        tpamap_name = './maps/rounded_rectangle/rounded_rectangle_tpamap.csv'
-        tpadata_name = './maps/rounded_rectangle/rounded_rectangle_tpadata.json'
+        tpamap_name = './maps/rounded_rectangle/friction_data/rounded_rectangle_tpamap.csv'
+        tpadata_name = './maps/rounded_rectangle/friction_data/rounded_rectangle_tpadata.json'
 
         tpamap = np.loadtxt(tpamap_name, delimiter=';', skiprows=1)
         tpamap *= 1.5  # map is 1.5 times larger than normal

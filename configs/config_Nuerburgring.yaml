@@ -4,16 +4,18 @@ run_name: 'map_wide'
 perf_num: 6
 
 # map paths
-map_path: './maps/rounded_rectangle/example_map'
+#map_path: './maps/Nuerburgring/Nuerburgring_map'
+map_path: './maps/Nuerburgring/Nuerburgring_map_empty'
 map_ext: '.png'
 
 # starting pose for map
-sx: 0.0
-sy: 0.0
-stheta: 1.57
+sx: -3.132
+sy: -3.001
+stheta: -2.377
 
 # raceline path and indices
-wpt_path: './maps/rounded_rectangle/rounded_rectangle_waypoints.csv'
+#wpt_path: './maps/Nuerburgring/Nuerburgring_waypoints.csv'
+wpt_path: './maps/Nuerburgring/waypoints/Nuerburgring_raceline.csv'
 wpt_delim: ';'
 wpt_rowskip: 3
 wpt_xind: 1
