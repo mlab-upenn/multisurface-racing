@@ -320,7 +320,6 @@ def main():  # after launching this you can run visualization.py to see the resu
     prev_mean1 = None
     prev_mean2 = None
     while not done:
-        t0 = time.time()
         # Regulator step MPC
         vehicle_state = np.array([env.sim.agents[0].state[0],
                                   env.sim.agents[0].state[1],
@@ -366,7 +365,6 @@ def main():  # after launching this you can run visualization.py to see the resu
         else:
             env.params['tire_p_dy1'] = 0.4  # mu_y
             env.params['tire_p_dx1'] = 0.5  # mu_x
-        print(f'Time taken until sim {time.time() - t0}')
 
         # Simulation step
         step_reward = 0.0

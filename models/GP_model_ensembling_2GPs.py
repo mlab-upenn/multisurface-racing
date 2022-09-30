@@ -78,6 +78,13 @@ class GPEnsembleModels2GPs:
         f = self.w * f1 + (1.0 - self.w) * f2
         return f
 
+    def batch_get_model_matrix(self, state_vec, control_vec):
+        A1, B1, C1 = self.gp_model1.batch_get_model_matrix(state_vec, control_vec)
+        A2, B2, C2 = self.gp_model2.batch_get_model_matrix(state_vec, control_vec)
+        A = self.w * A1 + (1.0 - self.w) * A2
+        B = self.w * B1 + (1.0 - self.w) * B2
+        C = self.w * C1 + (1.0 - self.w) * C2        
+        return A, B, C
     def get_model_matrix(self, state, control_input):
         A1, B1, C1 = self.gp_model1.get_model_matrix(state, control_input)
         A2, B2, C2 = self.gp_model2.get_model_matrix(state, control_input)

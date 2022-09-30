@@ -34,7 +34,6 @@ from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix, diags
 from numba import njit
 
-
 @njit(cache=True)
 def nearest_point(point, trajectory):
     """
@@ -336,18 +335,10 @@ class STMPCPlanner:
     def mpc_prob_solve(self, ref_traj, path_predict, x0, input_predict):
         self.x0k.value = x0
 
-        A_block = []
-        B_block = []
-        C_block = []
-        for t in range(self.config.TK):
-            A, B, C = self.model.get_model_matrix(path_predict[:, t], input_predict[:, t])
-            A_block.append(A)
-            B_block.append(B)
-            C_block.extend(C)
-
-        A_block = block_diag(tuple(A_block))
-        B_block = block_diag(tuple(B_block))
-        C_block = np.array(C_block)
+        A_batch, B_batch, C_batch = self.model.batch_get_model_matrix(path_predict[:, :self.config.TK], input_predict[:, :self.config.TK])
+        A_block = block_diag(A_batch)
+        B_block = block_diag(B_batch)
+        C_block = np.array(C_batch.flatten())
 
         self.Annz_k.value = A_block.data
         self.Bnnz_k.value = B_block.data
