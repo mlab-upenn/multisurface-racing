@@ -354,7 +354,37 @@ class GPEnsembleModel:
         self.y_measurements[1].append(Y_sample[1])
         self.y_measurements[2].append(Y_sample[2])
 
-    def train_gp(self):
+    def init_gp(self):
+        train_x = torch.tensor([self.x_measurements[k] for k in range(6)])
+        train_y = torch.tensor([self.y_measurements[k] for k in range(3)])
+        train_y = train_y.contiguous()
+
+        train_x_scaled = torch.transpose(torch.vstack((self.scaler_x[0].fit_transform(train_x[0]),
+                                                        self.scaler_x[1].fit_transform(train_x[1]),
+                                                        self.scaler_x[2].fit_transform(train_x[2]),
+                                                        self.scaler_x[3].fit_transform(train_x[3]),
+                                                        self.scaler_x[4].fit_transform(train_x[4]),
+                                                        self.scaler_x[5].fit_transform(train_x[5]),)), 0, 1).cuda()
+
+        train_y_scaled = torch.transpose(torch.vstack((self.scaler_y[0].fit_transform(train_y[0]),
+                                                        self.scaler_y[1].fit_transform(train_y[1]),
+                                                        self.scaler_y[2].fit_transform(train_y[2]),)), 0, 1).cuda()
+
+        self.gp_likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(num_tasks=3)
+        self.gp_model = BatchIndependentMultitaskGPModel(train_x_scaled, train_y_scaled, self.gp_likelihood)
+
+        return train_x_scaled, train_y_scaled
+
+    def cuda(self):
+        self.gp_model.cuda()
+        self.gp_likelihood.cuda()
+
+    def eval(self):
+        self.trained = True
+        self.gp_model.eval()
+        self.gp_likelihood.eval()
+
+    def train_gp(self, train_x_scaled, train_y_scaled):
 
         for i in range(1):
             #
@@ -397,25 +427,6 @@ class GPEnsembleModel:
             #             self.x_samples[j].append(self.x_measurements[j].pop(idx))
             #         for j in range(3):
             #             self.y_samples[j].append(self.y_measurements[j].pop(idx))
-
-            train_x = torch.tensor([self.x_measurements[k] for k in range(6)])
-            train_y = torch.tensor([self.y_measurements[k] for k in range(3)])
-            train_y = train_y.contiguous()
-
-            train_x_scaled = torch.transpose(torch.vstack((self.scaler_x[0].fit_transform(train_x[0]),
-                                                           self.scaler_x[1].fit_transform(train_x[1]),
-                                                           self.scaler_x[2].fit_transform(train_x[2]),
-                                                           self.scaler_x[3].fit_transform(train_x[3]),
-                                                           self.scaler_x[4].fit_transform(train_x[4]),
-                                                           self.scaler_x[5].fit_transform(train_x[5]),)), 0, 1).cuda()
-
-            train_y_scaled = torch.transpose(torch.vstack((self.scaler_y[0].fit_transform(train_y[0]),
-                                                           self.scaler_y[1].fit_transform(train_y[1]),
-                                                           self.scaler_y[2].fit_transform(train_y[2]),)), 0, 1).cuda()
-
-            self.gp_likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(num_tasks=3)
-            self.gp_model = BatchIndependentMultitaskGPModel(train_x_scaled, train_y_scaled, self.gp_likelihood)
-
             self.gp_model = self.gp_model.cuda()
             self.gp_likelihood = self.gp_likelihood.cuda()
 
