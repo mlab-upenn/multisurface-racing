@@ -7,17 +7,22 @@ from regulators.pure_pursuit import *
 from regulators.path_follow_mpc import *
 from models.kinematic import KinematicModel
 from models.extended_kinematic import ExtendedKinematicModel
-from models.GP_model_ensembleing_2GPs import GPEnsembleModels2GPs
+from models.GP_model_ensembling_2GPs import GPEnsembleModels2GPs
 from helpers.closest_point import *
 import torch
 import gpytorch
 import os
 import numpy as np
 
+from datetime import datetime
 from pyglet.gl import GL_POINTS
 import pyglet
 import json
 
+SAVE_MODELS = False
+PRETRAINED  = True
+PRETRAINED_NAMES = {'model1':['gp1', 'gp1_likelihood'],
+                    'model2':['gp2', 'gp2_likelihood']}
 
 @dataclass
 class MPCConfigEXT:
@@ -143,13 +148,13 @@ def main():  # after launching this you can run visualization.py to see the resu
     work = {'mass': 1225.88, 'lf': 0.80597534362552312, 'tlad': 10.6461887897713965, 'vgain': 1.0}
 
     # Load map config file
-    with open('config_%s.yaml' % map_name) as file:
+    with open('configs/config_%s.yaml' % map_name) as file:
         conf_dict = yaml.load(file, Loader=yaml.FullLoader)
     conf = Namespace(**conf_dict)
 
     if use_dyn_friction:
-        tpamap_name = './maps/rounded_rectangle/rounded_rectangle_tpamap.csv'
-        tpadata_name = './maps/rounded_rectangle/rounded_rectangle_tpadata.json'
+        tpamap_name = './maps/rounded_rectangle/friction_data/rounded_rectangle_tpamap.csv'
+        tpadata_name = './maps/rounded_rectangle/friction_data/rounded_rectangle_tpadata.json'
 
         tpamap = np.loadtxt(tpamap_name, delimiter=';', skiprows=1)
         tpamap *= 1.5  # map is 1.5 times larger than normal
@@ -223,10 +228,6 @@ def main():  # after launching this you can run visualization.py to see the resu
     # calc number of sim steps per one control step
     num_of_sim_steps = int(control_step / (env.timestep * 1000.0))
 
-    # learn model from stored measurements
-
-    print('train model 1')
-
     with open('dataset_1_1', 'r') as f:
         data = json.load(f)
 
@@ -239,15 +240,8 @@ def main():  # after launching this you can run visualization.py to see the resu
     planner_gp_mpc.model.gp_model1.y_measurements[0] = data['Y0']
     planner_gp_mpc.model.gp_model1.y_measurements[1] = data['Y1']
     planner_gp_mpc.model.gp_model1.y_measurements[2] = data['Y2']
-
     print(len(planner_gp_mpc.model.gp_model1.x_measurements[0]))
-    print("GP training...")
-    planner_gp_mpc.model.gp_model1.train_gp()
-    print("GP training done")
-    print('Model used: GP')
-    print('Reference speed: %f' % waypoints[:, 5][0])
-
-    print('train model 2')
+    scaled_x1, scaled_y1 = planner_gp_mpc.model.gp_model1.init_gp()
 
     with open('dataset_0_5', 'r') as f:
         data = json.load(f)
@@ -261,21 +255,71 @@ def main():  # after launching this you can run visualization.py to see the resu
     planner_gp_mpc.model.gp_model2.y_measurements[0] = data['Y0']
     planner_gp_mpc.model.gp_model2.y_measurements[1] = data['Y1']
     planner_gp_mpc.model.gp_model2.y_measurements[2] = data['Y2']
-
     print(len(planner_gp_mpc.model.gp_model2.x_measurements[0]))
-    print("GP training...")
-    planner_gp_mpc.model.gp_model2.train_gp()
-    print("GP training done")
-    gp_model_trained = 1
-    print('Model used: GP')
-    print('Reference speed: %f' % waypoints[:, 5][0])
+    scaled_x2, scaled_y2 = planner_gp_mpc.model.gp_model2.init_gp()
+
+    gp_models_trained = 0
+    # learn model from stored measurements
+    if not PRETRAINED:
+        print('train model 1')
+        print("GP training...")
+        planner_gp_mpc.model.gp_model1.train_gp(scaled_x1, scaled_y1)
+        print("GP training done")
+        print('Model used: GP')
+        print('Reference speed: %f' % waypoints[:, 5][0])
+
+        print('train model 2')
+        print("GP training...")
+        planner_gp_mpc.model.gp_model2.train_gp(scaled_x2, scaled_y2)
+        print("GP training done")
+        print('Model used: GP')
+        print('Reference speed: %f' % waypoints[:, 5][0])
+
+        if SAVE_MODELS:
+            now = datetime.now()
+            # dd/mm/YY H:M:S
+            dt_string = now.strftime("%d/%m/%Y-%H:%M:%S")
+            
+            torch.save(planner_gp_mpc.model.gp_model1.gp_model.state_dict()     , 'gp1' + dt_string + '.pth')
+            torch.save(planner_gp_mpc.model.gp_model1.gp_likelihood.state_dict(), 'gp1_likelihood' + dt_string + '.pth')
+            torch.save(planner_gp_mpc.model.gp_model2.gp_model.state_dict()     , 'gp2' + dt_string + '.pth')
+            torch.save(planner_gp_mpc.model.gp_model2.gp_likelihood.state_dict(), 'gp2_likelihood' + dt_string + '.pth')
+
+        # done training
+        gp_models_trained = 1
+
+    else:
+        # If you have pretrained models, load them
+        model1_names = PRETRAINED_NAMES['model1']
+        model2_names = PRETRAINED_NAMES['model2']
 
 
+        # Load model1
+        state_dict_gp1 = torch.load('trained_models/' + model1_names[0] + '.pth').copy()
+        planner_gp_mpc.model.gp_model1.gp_model.load_state_dict(state_dict_gp1)
+
+        state_dict_likelihood1 = torch.load('trained_models/' + model1_names[1] + '.pth').copy()
+        planner_gp_mpc.model.gp_model1.gp_likelihood.load_state_dict(state_dict_likelihood1)
+
+        planner_gp_mpc.model.gp_model1.eval()
+        planner_gp_mpc.model.gp_model1.cuda()
+        
+        # Load model2
+        state_dict_gp2 = torch.load('trained_models/' + model2_names[0] + '.pth').copy()
+        planner_gp_mpc.model.gp_model2.gp_model.load_state_dict(state_dict_gp2)
+
+        state_dict_likelihood2 = torch.load('trained_models/' + model2_names[1] + '.pth').copy()
+        planner_gp_mpc.model.gp_model2.gp_likelihood.load_state_dict(state_dict_likelihood2)
+
+        planner_gp_mpc.model.gp_model2.eval()
+        planner_gp_mpc.model.gp_model2.cuda()
+        # Pretrained so yes
+        gp_models_trained = 1
 
     gather_data = 0
-
+    prev_mean1 = None
+    prev_mean2 = None
     while not done:
-
         # Regulator step MPC
         vehicle_state = np.array([env.sim.agents[0].state[0],
                                   env.sim.agents[0].state[1],
@@ -290,8 +334,8 @@ def main():  # after launching this you can run visualization.py to see the resu
         u = [0.0, 0.0]
         tracking_error = 0.0
         total_var = 0.0
-        # if not gp_model_trained:
-        if gp_model_trained:
+        # if not gp_models_trained:
+        if gp_models_trained:
             u, mpc_ref_path_x, mpc_ref_path_y, mpc_pred_x, mpc_pred_y, mpc_ox, mpc_oy = planner_gp_mpc.plan(
                 vehicle_state)
             u[0] = u[0] / planner_gp_mpc.config.MASS  # Force to acceleration
@@ -309,9 +353,9 @@ def main():  # after launching this you can run visualization.py to see the resu
 
             _, tracking_error, _, _, _ = nearest_point_on_trajectory(np.array([mpc_pred_x[0], mpc_pred_y[0]]),
                                                                      np.array([mpc_ref_path_x[0:2], mpc_ref_path_y[0:2]]).T)
-        if gp_model_trained:
+        if gp_models_trained:
             with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                mean, lower, upper = planner_gp_mpc.model.scale_and_predict_model_step(vehicle_state, [u[0] * planner_gp_mpc.config.MASS, u[1]])
+                mean, lower, upper, prev_mean1, prev_mean2 = planner_gp_mpc.model.scale_and_predict_model_step(vehicle_state, [u[0] * planner_gp_mpc.config.MASS, u[1]])
 
         # set correct friction to the environment
         if use_dyn_friction:
@@ -335,8 +379,7 @@ def main():  # after launching this you can run visualization.py to see the resu
         yaw_rate_transition = env.sim.agents[0].state[5] + np.random.randn(1)[0] * 0.001 - vehicle_state[5]
 
         Y_real = np.array([float(vx_transition), float(vy_transition), float(yaw_rate_transition)])
-
-        planner_gp_mpc.model.compute_w(Y_real, vehicle_state, np.array([u[0] * planner_gp_mpc.config.MASS, u[1]]))
+        planner_gp_mpc.model.compute_w(Y_real, prev_mean1, prev_mean2, np.array([u[0] * planner_gp_mpc.config.MASS, u[1]]))
 
         # Logging
         log['time'].append(laptime)
@@ -362,8 +405,8 @@ def main():  # after launching this you can run visualization.py to see the resu
             last_render = 0
             env.render(mode='human_fast')
 
-        if obs['lap_counts'][0] == gp_model_trained:
-            gp_model_trained += 1
+        if obs['lap_counts'][0] == gp_models_trained:
+            gp_models_trained += 1
             with open('log01_eval', 'w') as f:
                 json.dump(log, f)
             print('Log saved...')

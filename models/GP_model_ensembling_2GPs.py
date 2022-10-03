@@ -5,7 +5,7 @@ from torch.autograd.functional import jacobian
 import os
 import time
 import cvxpy
-from models.GP_model_ensembleing import GPEnsembleModel
+from models.GP_model_ensembling import GPEnsembleModel
 
 np.set_printoptions(precision=4, suppress=True)
 
@@ -25,6 +25,7 @@ class GPEnsembleModels2GPs:
 
         self.w1 = np.array(0.5)
         self.w2 = np.array(0.5)
+        self.w_opt_prob_intiialized = False
 
     def clip_input(self, u):
         # u matrix Nx2
@@ -78,6 +79,13 @@ class GPEnsembleModels2GPs:
         f = self.w1 * f1 + self.w2 * f2
         return f
 
+    def batch_get_model_matrix(self, state_vec, control_vec):
+        A1, B1, C1 = self.gp_model1.batch_get_model_matrix(state_vec, control_vec)
+        A2, B2, C2 = self.gp_model2.batch_get_model_matrix(state_vec, control_vec)
+        A = self.w1 * A1 + 1.0 - self.w2 * A2
+        B = self.w1 * B1 + 1.0 - self.w2 * B2
+        C = self.w1 * C1 + 1.0 - self.w2 * C2
+        return A, B, C
     def get_model_matrix(self, state, control_input):
         A1, B1, C1 = self.gp_model1.get_model_matrix(state, control_input)
         A2, B2, C2 = self.gp_model2.get_model_matrix(state, control_input)
@@ -128,23 +136,41 @@ class GPEnsembleModels2GPs:
         scaled_mean = self.w1 * scaled_mean1 + self.w2 * scaled_mean2
         scaled_lower = self.w1 * scaled_lower1 + self.w2 * scaled_lower2
         scaled_upper = self.w1 * scaled_upper1 + self.w2 * scaled_upper2
-        return scaled_mean, scaled_lower, scaled_upper
+        return scaled_mean, scaled_lower, scaled_upper, scaled_mean1, scaled_mean2
 
     def compute_w(self, Y_real, vehicle_state, u):
 
-        mean1, lower1, upper1 = self.gp_model1.scale_and_predict_model_step(vehicle_state, u)
-        mean2, lower2, upper2 = self.gp_model2.scale_and_predict_model_step(vehicle_state, u)
-
+    def init_w_opt_prob(self, Y_real, mean1, mean2, u):
+        self.w_opt_prob_intiialized = True
         F = np.array([mean1, mean2]).squeeze().T
 
-        # Create problem
-        w = cvxpy.Variable((2, 1))
 
-        objective = cvxpy.sum_squares(Y_real.reshape((3, 1)) - F @ w)
-        constraints = [w >= 0.0, w <= 1.0]  # , w[0] + w[1] == 1.0
-        prob = cvxpy.Problem(cvxpy.Minimize(objective), constraints)
-        prob.solve(solver=cvxpy.OSQP)
+        # Create problem
+        self.w_var = cvxpy.Variable((2, 1))
+        self.F_par = cvxpy.Parameter(F.shape)
+        self.Y_par = cvxpy.Parameter((3, 1))
+
+        self.F_par.value = F
+        self.Y_par.value = Y_real.reshape((3, 1))
+
+        objective = cvxpy.sum_squares(self.Y_par - self.F_par @ self.w_var)
+        constraints = [self.w_var >= 0.0, self.w_var <= 1.0, self.w_var[0] + self.w_var[1] == 1.0]
+        self.w_prob = cvxpy.Problem(cvxpy.Minimize(objective), constraints)
+        self.w_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.1, eps_abs=0.001, eps_rel=0.001, verbose=False, warm_start=True)
         # print('W1: %f    W2: %f' % (w.value[0], w.value[1]))
-        self.w1 = w.value[0]
-        self.w2 = w.value[1]
+        self.w1 = self.w_var.value[0]
+        self.w2 = self.w_var.value[1]
+
+    def compute_w(self, Y_real, mean1, mean2, u):
+        if self.w_opt_prob_intiialized:
+            F = np.array([mean1, mean2]).squeeze().T
+
+            self.F_par.value = F
+            self.Y_par.value = Y_real.reshape((3, 1))
+            self.w_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.1, eps_abs=0.001, eps_rel=0.001, verbose=False, warm_start=True)
+            self.w1 = self.w_var.value[0]
+            self.w2 = self.w_var.value[1]
+            # print('W1: %f    W2: %f' % (w.value[0], w.value[1]))
+        else:
+            return self.init_w_opt_prob(Y_real, mean1, mean2, u)
 
