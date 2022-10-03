@@ -48,7 +48,7 @@ class BatchIndependentMultitaskGPModel(gpytorch.models.ExactGP):
         )
 
 
-class GPEnsembleModel:
+class GPSingleModel:
     """
     states - [x, y, vx, yaw angle, vy, yaw rate, steering angle]
     inputs - [drive force (proportional to acceleration), steering velocity]
@@ -60,14 +60,14 @@ class GPEnsembleModel:
 
         # gpytorch.settings.cg_tolerance(0.1)
 
-        self.x_measurements = [[] for i in range(6)]
+        self.x_measurements = [[] for i in range(9)]
         self.y_measurements = [[] for i in range(3)]
 
-        self.x_samples = [[] for i in range(6)]
+        self.x_samples = [[] for i in range(9)]
         self.y_samples = [[] for i in range(3)]
 
         self.scaler_x = [TorchNormalizer(), TorchNormalizer(), TorchNormalizer(),
-                         TorchNormalizer(), TorchNormalizer(), TorchNormalizer()]
+                         TorchNormalizer(), TorchNormalizer(), TorchNormalizer(), TorchNormalizer(), TorchNormalizer(), TorchNormalizer()]
         self.scaler_y = [TorchNormalizer(), TorchNormalizer(), TorchNormalizer()]
 
         self.trained = False
@@ -121,7 +121,7 @@ class GPEnsembleModel:
         position = state[[0, 1]]
         return speed, orientation, position
 
-    def get_f(self, state, control_input):
+    def get_f(self, state, control_input, v_err=0.0, yaw_rate_err=0.0):
         # state = x, y, vx, yaw angle, vy, yaw rate, steering angle
         # input = drive force (proportional to acceleration), steering velocity
         # input check
@@ -134,7 +134,7 @@ class GPEnsembleModel:
         x, y, vx, yaw, vy, yaw_rate, steering_angle = state
 
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
-            mean, lower, upper = self.scale_and_predict_model_step(state, control_input)
+            mean, lower, upper = self.scale_and_predict_model_step(state, control_input, v_err, yaw_rate_err)
 
         f = np.zeros(7)
         f[0] = vx * np.cos(yaw) - vy * np.sin(yaw)
@@ -147,7 +147,7 @@ class GPEnsembleModel:
 
         return f
 
-    def get_model_matrix(self, state, control_input):
+    def get_model_matrix(self, state, control_input, v_err, yaw_rate_err):
         x, y, vx, yaw, vy, yaw_rate, steering_angle = state
         Fxr, delta_v = control_input
 
@@ -166,9 +166,9 @@ class GPEnsembleModel:
             with torch.no_grad(), gpytorch.settings.fast_pred_var():
                 jac = jacobian(fun, torch.tensor(
                     [[float(vx), float(vy), float(yaw_rate), float(steering_angle), float(Fxr),
-                      float(delta_v)]]).cuda()).squeeze()
+                      float(delta_v), float(v_err), float(yaw_rate_err)]]).cuda()).squeeze()
 
-                mean, lower, upper = self.scale_and_predict_model_step(state, control_input)
+                mean, lower, upper = self.scale_and_predict_model_step(state, control_input, v_err, yaw_rate_err)
 
                 h1 = jac[0].cpu().numpy()
                 h2 = jac[1].cpu().numpy()
@@ -272,14 +272,17 @@ class GPEnsembleModel:
         input_prediction = np.zeros((2, control_input.shape[1] + 1))
         return predicted_states, input_prediction
 
-    def scale_and_predict_model_step(self, state, control_input):
+    def scale_and_predict_model_step(self, state, control_input, v_err, vy_err, yaw_rate_err):
         point = torch.tensor([float(self.scaler_x[0].transform(state[2])),
                               float(self.scaler_x[1].transform(state[4])),
                               float(self.scaler_x[2].transform(state[5])),
                               float(self.scaler_x[3].transform(state[6])),
                               float(self.scaler_x[4].transform(control_input[0])),  # control_input[0, i - 1]
                               float(self.scaler_x[5].transform(control_input[1])),
-                              ]).reshape((1, 6)).cuda()
+                              float(self.scaler_x[6].transform(v_err)),
+                              float(self.scaler_x[7].transform(vy_err)),
+                              float(self.scaler_x[8].transform(yaw_rate_err)),
+                              ]).reshape((1, 9)).cuda()
 
         mean, lower, upper = self.predict_model_step(point)
 
@@ -302,10 +305,11 @@ class GPEnsembleModel:
 
     def for_jacobian_comp(self, x):
         means = torch.tensor([[self.scaler_x[0].mean, self.scaler_x[1].mean, self.scaler_x[2].mean,
-                               self.scaler_x[3].mean, self.scaler_x[4].mean, self.scaler_x[5].mean]], device=torch.device('cuda'))
+                               self.scaler_x[3].mean, self.scaler_x[4].mean, self.scaler_x[5].mean, self.scaler_x[6].mean,
+                               self.scaler_x[7].mean]], device=torch.device('cuda'))
 
         std = torch.tensor([[self.scaler_x[0].std, self.scaler_x[1].std, self.scaler_x[2].std,
-                             self.scaler_x[3].std, self.scaler_x[4].std, self.scaler_x[5].std]]).cuda()
+                             self.scaler_x[3].std, self.scaler_x[4].std, self.scaler_x[5].std, self.scaler_x[6].std, self.scaler_x[7].std]]).cuda()
         x = (x - means) / std
 
         mean, lower, upper = self.predict_model_step(x)
@@ -349,6 +353,9 @@ class GPEnsembleModel:
         self.x_measurements[3].append(X_sample[3])
         self.x_measurements[4].append(X_sample[4])
         self.x_measurements[5].append(X_sample[5])
+        self.x_measurements[6].append(X_sample[6])
+        self.x_measurements[7].append(X_sample[7])
+        self.x_measurements[8].append(X_sample[8])
 
         self.y_measurements[0].append(Y_sample[0])
         self.y_measurements[1].append(Y_sample[1])
@@ -398,7 +405,7 @@ class GPEnsembleModel:
             #         for j in range(3):
             #             self.y_samples[j].append(self.y_measurements[j].pop(idx))
 
-            train_x = torch.tensor([self.x_measurements[k] for k in range(6)])
+            train_x = torch.tensor([self.x_measurements[k] for k in range(9)])
             train_y = torch.tensor([self.y_measurements[k] for k in range(3)])
             train_y = train_y.contiguous()
 
@@ -407,7 +414,11 @@ class GPEnsembleModel:
                                                            self.scaler_x[2].fit_transform(train_x[2]),
                                                            self.scaler_x[3].fit_transform(train_x[3]),
                                                            self.scaler_x[4].fit_transform(train_x[4]),
-                                                           self.scaler_x[5].fit_transform(train_x[5]),)), 0, 1).cuda()
+                                                           self.scaler_x[5].fit_transform(train_x[5]),
+                                                           self.scaler_x[6].fit_transform(train_x[6]),
+                                                           self.scaler_x[7].fit_transform(train_x[7]),
+                                                           self.scaler_x[8].fit_transform(train_x[8]),
+                                                           )), 0, 1).cuda()
 
             train_y_scaled = torch.transpose(torch.vstack((self.scaler_y[0].fit_transform(train_y[0]),
                                                            self.scaler_y[1].fit_transform(train_y[1]),
@@ -420,7 +431,7 @@ class GPEnsembleModel:
             self.gp_likelihood = self.gp_likelihood.cuda()
 
             if method == 0:
-                training_iterations = 300
+                training_iterations = 350
             else:
                 training_iterations = 500
 

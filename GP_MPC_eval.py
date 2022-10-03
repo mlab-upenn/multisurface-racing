@@ -164,9 +164,9 @@ def main():  # after launching this you can run visualization.py to see the resu
     if constant_speed:
         # waypoints[:, 5] = waypoints[:, 5] * 2.0
         if map_name == 'rounded_rectangle':
-            waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 10.0
+            waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 11.0
         if map_name == 'l_shape':
-            waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 8.0
+            waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 11.5
 
     # init controllers
     planner_pp = PurePursuitPlanner(conf, 0.805975 + 1.50876)  # 0.805975 + 1.50876
@@ -225,7 +225,7 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     # learn model from stored measurements
 
-    with open('dataset_1_1', 'r') as f:
+    with open('dataset_1_3', 'r') as f:
         data = json.load(f)
 
     planner_gp_mpc.model.x_measurements[0] = data['X0']
@@ -294,8 +294,8 @@ def main():  # after launching this you can run visualization.py to see the resu
             env.params['tire_p_dy1'] = tpadata[str(min_id)][0]  # mu_y
             env.params['tire_p_dx1'] = tpadata[str(min_id)][0] * 1.1  # mu_x
         else:
-            env.params['tire_p_dy1'] = 0.4  # mu_y
-            env.params['tire_p_dx1'] = 0.5  # mu_x
+            env.params['tire_p_dy1'] = 1.2  # mu_y
+            env.params['tire_p_dx1'] = 1.3  # mu_x
 
         # Simulation step
         step_reward = 0.0

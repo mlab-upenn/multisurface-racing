@@ -23,7 +23,8 @@ class GPEnsembleModels2GPs:
         self.gp_model1 = GPEnsembleModel(config)
         self.gp_model2 = GPEnsembleModel(config)
 
-        self.w = np.array(0.5)
+        self.w1 = np.array(0.5)
+        self.w2 = np.array(0.5)
 
     def clip_input(self, u):
         # u matrix Nx2
@@ -74,15 +75,15 @@ class GPEnsembleModels2GPs:
     def get_f(self, state, control_input):
         f1 = self.gp_model1.get_f(state, control_input)
         f2 = self.gp_model2.get_f(state, control_input)
-        f = self.w * f1 + (1.0 - self.w) * f2
+        f = self.w1 * f1 + self.w2 * f2
         return f
 
     def get_model_matrix(self, state, control_input):
         A1, B1, C1 = self.gp_model1.get_model_matrix(state, control_input)
         A2, B2, C2 = self.gp_model2.get_model_matrix(state, control_input)
-        A = self.w * A1 + (1.0 - self.w) * A2
-        B = self.w * B1 + (1.0 - self.w) * B2
-        C = self.w * C1 + (1.0 - self.w) * C2
+        A = self.w1 * A1 + 1.0 - self.w2 * A2
+        B = self.w1 * B1 + 1.0 - self.w2 * B2
+        C = self.w1 * C1 + 1.0 - self.w2 * C2
         return A, B, C
 
     def predict_kin_from_dyn(self, states, x0):
@@ -124,9 +125,9 @@ class GPEnsembleModels2GPs:
     def scale_and_predict_model_step(self, state, control_input):
         scaled_mean1, scaled_lower1, scaled_upper1 = self.gp_model1.scale_and_predict_model_step(state, control_input)
         scaled_mean2, scaled_lower2, scaled_upper2 = self.gp_model2.scale_and_predict_model_step(state, control_input)
-        scaled_mean = self.w * scaled_mean1 + (1.0 - self.w) * scaled_mean2
-        scaled_lower = self.w * scaled_lower1 + (1.0 - self.w) * scaled_lower2
-        scaled_upper = self.w * scaled_upper1 + (1.0 - self.w) * scaled_upper2
+        scaled_mean = self.w1 * scaled_mean1 + self.w2 * scaled_mean2
+        scaled_lower = self.w1 * scaled_lower1 + self.w2 * scaled_lower2
+        scaled_upper = self.w1 * scaled_upper1 + self.w2 * scaled_upper2
         return scaled_mean, scaled_lower, scaled_upper
 
     def compute_w(self, Y_real, vehicle_state, u):
@@ -140,9 +141,10 @@ class GPEnsembleModels2GPs:
         w = cvxpy.Variable((2, 1))
 
         objective = cvxpy.sum_squares(Y_real.reshape((3, 1)) - F @ w)
-        constraints = [w >= 0.0, w <= 1.0, w[0] + w[1] == 1.0]
+        constraints = [w >= 0.0, w <= 1.0]  # , w[0] + w[1] == 1.0
         prob = cvxpy.Problem(cvxpy.Minimize(objective), constraints)
         prob.solve(solver=cvxpy.OSQP)
-        print(w.value)
-        self.w = w.value[0]
+        # print('W1: %f    W2: %f' % (w.value[0], w.value[1]))
+        self.w1 = w.value[0]
+        self.w2 = w.value[1]
 
