@@ -1,7 +1,6 @@
 import json
 import numpy as np
-from models.GP_model_ensembleing import GPEnsembleModel
-from models.GP_model_ensembleing_2GPs import GPEnsembleModels2GPs
+from models.GP_model_ensembling_2GPs import GPEnsembleModels2GPs
 from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import torch
@@ -29,6 +28,7 @@ class Config:
 # inputs
 train_datasets_name = ['dataset_0_3_20ms', 'dataset_1_0_20ms']  # max two datasets
 test_dataset_name = ['dataset_0_6_20ms']  # test_dataset
+np.random.seed(42)  # Not so random - solves everything
 
 # code
 data_names = ['X0', 'X1', 'X2', 'X3', 'X4', 'X5', 'Y0', 'Y1', 'Y2',  # x(t) and y(t)
@@ -124,9 +124,12 @@ model_exp_2.gp_model2.y_measurements[0] = np.concatenate([data_method_2_train_m2
 model_exp_2.gp_model2.y_measurements[1] = np.concatenate([data_method_2_train_m2[7], data_method_2_train_m2[16]], axis=0, dtype='float32')
 model_exp_2.gp_model2.y_measurements[2] = np.concatenate([data_method_2_train_m2[8], data_method_2_train_m2[17]], axis=0, dtype='float32')
 
+scaled_x1, scaled_y1 = model_exp_2.gp_model1.init_gp()
+scaled_x2, scaled_y2 = model_exp_2.gp_model2.init_gp()
+
 print('Method 2, training:')
-model_exp_2.gp_model1.train_gp(method=0)
-model_exp_2.gp_model2.train_gp(method=0)
+model_exp_2.gp_model1.train_gp(scaled_x1, scaled_y1)
+model_exp_2.gp_model2.train_gp(scaled_x2, scaled_y2)
 
 means_exp_2 = []
 uppers_exp_2 = []
@@ -150,9 +153,14 @@ with torch.no_grad(), gpytorch.settings.fast_pred_var():
         ])
         Y_real = np.array([data_method_2_test[15][i].astype('float32'), data_method_2_test[16][i].astype('float32'),
                            data_method_2_test[17][i].astype('float32')])
-        model_exp_2.compute_w(Y_real, vehicle_state, u)
+
         # predict Y(t) based on x(t) and W computed in previous step
-        mean, lower, upper = model_exp_2.scale_and_predict_model_step([0.0, 0.0, data_method_2_test[0][i], 0.0, data_method_2_test[1][i],
+        _, _, _, mean1, mean2 = model_exp_2.scale_and_predict_model_step(vehicle_state, u)
+
+        model_exp_2.compute_w(Y_real, mean1, mean2, u)
+
+        # predict Y(t) based on x(t) and W computed in previous step
+        mean, lower, upper, _, _ = model_exp_2.scale_and_predict_model_step([0.0, 0.0, data_method_2_test[0][i], 0.0, data_method_2_test[1][i],
                                                                        data_method_2_test[2][i], data_method_2_test[3][i]],
                                                                       [data_method_2_test[4][i], data_method_2_test[5][i]])
         if (i + 1) % 200 == 0:

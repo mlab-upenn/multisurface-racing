@@ -1,7 +1,7 @@
 import json
 import numpy as np
-from models.GP_model_ensembleing import GPEnsembleModel
-from models.GP_model_ensembleing_2GPs import GPEnsembleModels2GPs
+from models.GP_model_ensembling import GPEnsembleModel
+from models.GP_model_ensembling_2GPs import GPEnsembleModels2GPs
 from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import torch
@@ -28,7 +28,7 @@ class Config:
 
 # inputs
 datasets_name = ['dataset_0_3_50ms', 'dataset_1_0_50ms']  # max two datasets
-test_percentage = 15.0  # what percentage of the dataset should be used for testing
+test_percentage = 20.0  # what percentage of the dataset should be used for testing
 testing_dataset = 1  # choose which dataset test part you want to test on
 
 # code
@@ -94,8 +94,11 @@ model_exp_1.y_measurements[0] = np.concatenate([data_method_1_train[6], data_met
 model_exp_1.y_measurements[1] = np.concatenate([data_method_1_train[7], data_method_1_train[16]], axis=0, dtype='float32')
 model_exp_1.y_measurements[2] = np.concatenate([data_method_1_train[8], data_method_1_train[17]], axis=0, dtype='float32')
 
+
+
 print('Method 1, training:')
-model_exp_1.train_gp(method=0)
+scaled_x1, scaled_y1 = model_exp_1.init_gp()
+model_exp_1.train_gp(scaled_x1, scaled_y1, method=0)
 means_exp_1 = []
 uppers_exp_1 = []
 lowers_exp_1 = []
@@ -159,9 +162,12 @@ model_exp_2.gp_model2.y_measurements[0] = np.concatenate([data_method_2_train_m2
 model_exp_2.gp_model2.y_measurements[1] = np.concatenate([data_method_2_train_m2[7], data_method_2_train_m2[16]], axis=0, dtype='float32')
 model_exp_2.gp_model2.y_measurements[2] = np.concatenate([data_method_2_train_m2[8], data_method_2_train_m2[17]], axis=0, dtype='float32')
 
+scaled_x1, scaled_y1 = model_exp_2.gp_model1.init_gp()
+scaled_x2, scaled_y2 = model_exp_2.gp_model2.init_gp()
+
 print('Method 2, training:')
-model_exp_2.gp_model1.train_gp(method=0)
-model_exp_2.gp_model2.train_gp(method=0)
+model_exp_2.gp_model1.train_gp(scaled_x1, scaled_y1)
+model_exp_2.gp_model2.train_gp(scaled_x2, scaled_y2)
 
 means_exp_2 = []
 uppers_exp_2 = []
@@ -180,16 +186,21 @@ with torch.no_grad(), gpytorch.settings.fast_pred_var():
                                   data_method_2_test[12][i].astype('float32'),  # steering angle
                                   ])
         u = np.array([
-                      data_method_2_test[13][i].astype('float32'),
-                      data_method_2_test[14][i].astype('float32'),
-                      ])
+            data_method_2_test[13][i].astype('float32'),
+            data_method_2_test[14][i].astype('float32'),
+        ])
         Y_real = np.array([data_method_2_test[15][i].astype('float32'), data_method_2_test[16][i].astype('float32'),
                            data_method_2_test[17][i].astype('float32')])
-        model_exp_2.compute_w(Y_real, vehicle_state, u)
+
         # predict Y(t) based on x(t) and W computed in previous step
-        mean, lower, upper = model_exp_2.scale_and_predict_model_step([0.0, 0.0, data_method_2_test[0][i], 0.0, data_method_2_test[1][i],
-                                                                       data_method_2_test[2][i], data_method_2_test[3][i]],
-                                                                      [data_method_2_test[4][i], data_method_2_test[5][i]])
+        _, _, _, mean1, mean2 = model_exp_2.scale_and_predict_model_step(vehicle_state, u)
+
+        model_exp_2.compute_w(Y_real, mean1, mean2, u)
+
+        # predict Y(t) based on x(t) and W computed in previous step
+        mean, lower, upper, _, _ = model_exp_2.scale_and_predict_model_step([0.0, 0.0, data_method_2_test[0][i], 0.0, data_method_2_test[1][i],
+                                                                             data_method_2_test[2][i], data_method_2_test[3][i]],
+                                                                            [data_method_2_test[4][i], data_method_2_test[5][i]])
         if (i + 1) % 200 == 0:
             print('Method 2, prediction %s/%s' % (i, data_method_2_test.shape[1]))
         means_exp_2.append(mean)
@@ -210,12 +221,9 @@ print('ay prediction maximum error: %f' % np.max(errors_exp_2[1, :]))
 print('yaw rate prediction average error: %f' % (np.sum(errors_exp_2[2, :]) / errors_exp_2[2, :].size))
 print('yaw rate prediction maximum error: %f' % np.max(errors_exp_2[2, :]))
 
-plt.plot(errors_exp_1[0, :])
-plt.ylabel('error')
-plt.xlabel('item')
-plt.show()
-
-plt.plot(errors_exp_2[0, :])
+plt.plot(errors_exp_1[0, :], label='Single GP')
+plt.plot(errors_exp_2[0, :], label='Multi GP')
+plt.legend()
 plt.ylabel('error')
 plt.xlabel('item')
 plt.show()

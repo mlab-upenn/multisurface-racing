@@ -1,6 +1,6 @@
 import json
 import numpy as np
-from models.GP_model_ensembleing import GPEnsembleModel
+from models.GP_model_ensembling import GPEnsembleModel
 from dataclasses import dataclass
 import matplotlib.pyplot as plt
 import torch
@@ -94,7 +94,8 @@ model_exp_1.y_measurements[1] = list(data_method_1_train[7])
 model_exp_1.y_measurements[2] = list(data_method_1_train[8])
 
 print('Method 1, training:')
-model_exp_1.train_gp(method=0)
+scaled_x1, scaled_y1 = model_exp_1.init_gp()
+model_exp_1.train_gp(scaled_x1, scaled_y1, method=0)
 means_exp_1 = []
 uppers_exp_1 = []
 lowers_exp_1 = []
@@ -151,7 +152,8 @@ model_exp_2.y_measurements[1] = data_method_2_train[7].astype('float32')
 model_exp_2.y_measurements[2] = data_method_2_train[8].astype('float32')
 
 print('Method 2, training:')
-model_exp_2.train_gp(method=0)
+scaled_x1, scaled_y1 = model_exp_2.init_gp()
+model_exp_2.train_gp(scaled_x1, scaled_y1, method=0)
 means_exp_2 = []
 uppers_exp_2 = []
 lowers_exp_2 = []

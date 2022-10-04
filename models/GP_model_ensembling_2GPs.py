@@ -138,8 +138,6 @@ class GPEnsembleModels2GPs:
         scaled_upper = self.w1 * scaled_upper1 + self.w2 * scaled_upper2
         return scaled_mean, scaled_lower, scaled_upper, scaled_mean1, scaled_mean2
 
-    def compute_w(self, Y_real, vehicle_state, u):
-
     def init_w_opt_prob(self, Y_real, mean1, mean2, u):
         self.w_opt_prob_intiialized = True
         F = np.array([mean1, mean2]).squeeze().T

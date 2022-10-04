@@ -96,7 +96,8 @@ model_exp_1.y_measurements[1] = np.concatenate([data_method_1_train[7], data_met
 model_exp_1.y_measurements[2] = np.concatenate([data_method_1_train[8], data_method_1_train[17]], axis=0, dtype='float32')
 
 print('Method 1, training:')
-model_exp_1.train_gp(method=0)
+scaled_x1, scaled_y1 = model_exp_1.gp_model1.init_gp()
+model_exp_1.train_gp(scaled_x1, scaled_y1, method=0)
 means_exp_1 = []
 uppers_exp_1 = []
 lowers_exp_1 = []
