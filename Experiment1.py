@@ -59,7 +59,6 @@ for name in datasets_name:
     datasets_test[name] = datasets[name][:, :num_of_data_in_test]
     datasets_train[name] = datasets[name][:, num_of_data_in_test:]
 
-
 print('Dateset info start')
 for name in datasets_name:
     print('-----------')
@@ -72,42 +71,44 @@ print('Dateset info end')
 print('\n\n')
 
 # Method 1 - Training one GP on all the data - should have the worst results
+
+# get training / testing dataset
 arr_data_train_1 = []
-arr_data_test_1 = [datasets_test[datasets_name[testing_dataset]]]
 for name in datasets_name:
     arr_data_train_1.append(datasets_train[name])
 
 data_method_1_train = np.concatenate(arr_data_train_1, axis=1, dtype='float32')
-data_method_1_test = np.concatenate(arr_data_test_1, axis=1, dtype='float32')
+data_method_1_test = np.array(datasets_test[datasets_name[testing_dataset]], dtype='float32')
 
+# create GP
 model_exp_1 = GPEnsembleModel(Config())
 
-model_exp_1.x_measurements[0] = list(data_method_1_train[0])
-model_exp_1.x_measurements[1] = list(data_method_1_train[1])
-model_exp_1.x_measurements[2] = list(data_method_1_train[2])
-model_exp_1.x_measurements[3] = list(data_method_1_train[3])
-model_exp_1.x_measurements[4] = list(data_method_1_train[4])
-model_exp_1.x_measurements[5] = list(data_method_1_train[5])
-
-model_exp_1.y_measurements[0] = list(data_method_1_train[6])
-model_exp_1.y_measurements[1] = list(data_method_1_train[7])
-model_exp_1.y_measurements[2] = list(data_method_1_train[8])
+# add training data to the GP
+model_exp_1.x_measurements = data_method_1_train[:6, :].tolist()
+model_exp_1.y_measurements = data_method_1_train[6:9, :].tolist()
 
 print('Method 1, training:')
 scaled_x1, scaled_y1 = model_exp_1.init_gp()
 model_exp_1.train_gp(scaled_x1, scaled_y1, method=0)
+
+print('Method 1, testing:')
 means_exp_1 = []
 uppers_exp_1 = []
 lowers_exp_1 = []
 
-print('Method 1, testing:')
 with torch.no_grad(), gpytorch.settings.fast_pred_var():
     for i in range(data_method_1_test.shape[1]):
-        mean, lower, upper = model_exp_1.scale_and_predict_model_step([0.0, 0.0, data_method_1_test[0][i], 0.0, data_method_1_test[1][i],
-                                                                       data_method_1_test[2][i], data_method_1_test[3][i]],
-                                                                      [data_method_1_test[4][i], data_method_1_test[5][i]])
+        # get current state and control input
+        current_vehicle_state = [0.0, 0.0, data_method_1_test[0][i], 0.0, data_method_1_test[1][i], data_method_1_test[2][i], data_method_1_test[3][i]]
+        current_control_input = [data_method_1_test[4][i], data_method_1_test[5][i]]
+
+        # predict next state using GP
+        mean, lower, upper = model_exp_1.scale_and_predict_model_step(current_vehicle_state, current_control_input)
+
         if (i + 1) % 200 == 0:
             print('Method 1, prediction %s/%s' % (i, data_method_1_test.shape[1]))
+
+        # store predictions
         means_exp_1.append(mean)
         uppers_exp_1.append(upper)
         lowers_exp_1.append(lower)
@@ -116,6 +117,7 @@ means_exp_1 = np.array(means_exp_1).squeeze()  # n x 3
 uppers_exp_1 = np.array(uppers_exp_1).squeeze()  # n x 3
 lowers_exp_1 = np.array(lowers_exp_1).squeeze()  # n x 3
 
+# calculate prediction error
 errors_exp_1 = np.absolute(means_exp_1.T - np.array([data_method_1_test[6], data_method_1_test[7], data_method_1_test[8]]))
 
 print('--------Method 1 results--------')
@@ -129,43 +131,39 @@ print('\n\n')
 
 # Method 2
 
-arr_data_train_2 = []
-arr_data_test_2 = []
+# get training / testing dataset
+data_method_2_train = np.array(datasets_train[datasets_name[testing_dataset]], dtype='float32')
+data_method_2_test = np.array(datasets_test[datasets_name[testing_dataset]], dtype='float32')
 
-arr_data_train_2.append(datasets_train[datasets_name[testing_dataset]])
-arr_data_test_2.append(datasets_test[datasets_name[testing_dataset]])
-
-data_method_2_train = np.concatenate(arr_data_train_2, axis=1, dtype='float32')
-data_method_2_test = np.concatenate(arr_data_test_2, axis=1, dtype='float32')
-
+# create GP model
 model_exp_2 = GPEnsembleModel(Config())
 
-model_exp_2.x_measurements[0] = data_method_2_train[0].astype('float32')
-model_exp_2.x_measurements[1] = data_method_2_train[1].astype('float32')
-model_exp_2.x_measurements[2] = data_method_2_train[2].astype('float32')
-model_exp_2.x_measurements[3] = data_method_2_train[3].astype('float32')
-model_exp_2.x_measurements[4] = data_method_2_train[4].astype('float32')
-model_exp_2.x_measurements[5] = data_method_2_train[5].astype('float32')
-
-model_exp_2.y_measurements[0] = data_method_2_train[6].astype('float32')
-model_exp_2.y_measurements[1] = data_method_2_train[7].astype('float32')
-model_exp_2.y_measurements[2] = data_method_2_train[8].astype('float32')
+# add training data to the GP
+model_exp_2.x_measurements = data_method_2_train[:6, :].tolist()
+model_exp_2.y_measurements = data_method_2_train[6:9, :].tolist()
 
 print('Method 2, training:')
 scaled_x1, scaled_y1 = model_exp_2.init_gp()
 model_exp_2.train_gp(scaled_x1, scaled_y1, method=0)
+
+print('Method 2, testing:')
 means_exp_2 = []
 uppers_exp_2 = []
 lowers_exp_2 = []
 
-print('Method 2, testing:')
 with torch.no_grad(), gpytorch.settings.fast_pred_var():
     for i in range(data_method_2_test.shape[1]):
-        mean, lower, upper = model_exp_2.scale_and_predict_model_step([0.0, 0.0, data_method_2_test[0][i], 0.0, data_method_2_test[1][i],
-                                                                       data_method_2_test[2][i], data_method_2_test[3][i]],
-                                                                      [data_method_2_test[4][i], data_method_2_test[5][i]])
+        # get current state and control input
+        current_vehicle_state = [0.0, 0.0, data_method_2_test[0][i], 0.0, data_method_2_test[1][i], data_method_2_test[2][i], data_method_2_test[3][i]]
+        current_control_input = [data_method_2_test[4][i], data_method_2_test[5][i]]
+
+        # predict next state using GP
+        mean, lower, upper = model_exp_2.scale_and_predict_model_step(current_vehicle_state, current_control_input)
+
         if (i + 1) % 200 == 0:
             print('Method 2, prediction %s/%s' % (i, data_method_2_test.shape[1]))
+
+        # store predictions
         means_exp_2.append(mean)
         uppers_exp_2.append(upper)
         lowers_exp_2.append(lower)
@@ -174,6 +172,7 @@ means_exp_2 = np.array(means_exp_2).squeeze()  # n x 3
 uppers_exp_2 = np.array(uppers_exp_2).squeeze()  # n x 3
 lowers_exp_2 = np.array(lowers_exp_2).squeeze()  # n x 3
 
+# calculate prediction error
 errors_exp_2 = np.absolute(means_exp_2.T - np.array([data_method_2_test[6], data_method_2_test[7], data_method_2_test[8]]))
 
 print('--------Method 2 results--------')
@@ -184,12 +183,9 @@ print('ay prediction maximum error: %f' % np.max(errors_exp_2[1, :]))
 print('yaw rate prediction average error: %f' % (np.sum(errors_exp_2[2, :]) / errors_exp_2[2, :].size))
 print('yaw rate prediction maximum error: %f' % np.max(errors_exp_2[2, :]))
 
-plt.plot(errors_exp_1[0, :])
-plt.ylabel('error')
-plt.xlabel('item')
-plt.show()
-
-plt.plot(errors_exp_2[0, :])
+plt.plot(errors_exp_1[0, :], label='Training on two frictions')
+plt.plot(errors_exp_2[0, :], label='Training on one frictions')
+plt.legend()
 plt.ylabel('error')
 plt.xlabel('item')
 plt.show()
