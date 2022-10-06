@@ -393,13 +393,14 @@ class STMPCPlanner:
         ref_path, self.target_ind = self.calc_ref_trajectory(position, orientation, speed, path)
         # Solve the Linear MPC Control problem
         (
-            self.input_o,
+            input_o,
             states_output,
             state_predict,
         ) = self.linear_mpc_control(ref_path, x0, self.input_o)
 
         if not np.any(np.isnan(states_output)):
             self.states_output = states_output
+            self.input_o = input_o
 
         # Steering Output: First entry of the MPC steering angle output vector in degree
         u = self.input_o[:, 0]
