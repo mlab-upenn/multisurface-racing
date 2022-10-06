@@ -7,7 +7,7 @@ import numpy as np
 colors = ["blue", "orange", "green", "red", "purple", "brown", "pink", "gray", "olive", "cyan"]
 
 # input parameters
-name = 'log01'
+name = 'log01_eval'
 # name = './ignore_stored_data/all_data_bad_comparison'
 
 from_lap = 1
@@ -30,6 +30,29 @@ for key in keys:
 
 
 #  np.array(data['time'])[np.array(data['lap_n']) == 1.0]
+ax = plt.figure().add_subplot()
+color_arr = []
+for i in range(len(data_lap['x'])):
+    color_arr.append(data_lap['w1'][i])
+
+scat = ax.scatter(data_lap['x'], data_lap['y'], marker='o', c=color_arr, cmap='RdYlGn')
+# norm = mpl.colors.Normalize(vmin=0, vmax=1)
+# ax = plt.figure().add_subplot()
+# plt.colorbar(mpl.cm.ScalarMappable(norm=norm, cmap='RdYlGn'),
+#              cax=ax, orientation='horizontal', label='Some Units')
+plt.colorbar(scat)
+plt.ylabel('y [m]')
+plt.xlabel('x [m]')
+plt.show()
+
+ax = plt.figure().add_subplot(projection='3d')
+ax.scatter(data_lap['x'], data_lap['y'], data_lap['w1'], marker='o')
+plt.ylabel('y [m]')
+plt.xlabel('x [m]')
+ax.set_zlabel('ax variance [m/s/s]')
+ax.set_aspect('equalxy', adjustable='datalim')
+plt.show()
+
 ax = plt.figure().add_subplot(projection='3d')
 ax.scatter(data_lap['x'], data_lap['y'], data_lap['vx_var'], marker='o')
 plt.ylabel('y [m]')
