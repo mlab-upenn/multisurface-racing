@@ -20,67 +20,29 @@ import pyglet
 import json
 
 SAVE_MODELS = False
-PRETRAINED  = True
-PRETRAINED_NAMES = {'model1':['gp1', 'gp1_likelihood'],
-                    'model2':['gp2', 'gp2_likelihood']}
-
-@dataclass
-class MPCConfigEXT:
-    NXK: int = 7  # length of kinematic state vector: z = [x, y, vx, yaw angle, vy, yaw rate, steering angle]
-    NU: int = 2  # length of input vector: u = = [acceleration, steering speed]
-    TK: int = 10  # finite time horizon length kinematic
-
-    Rk: list = field(
-        default_factory=lambda: np.diag([0.0000005, 100.0])
-    )  # input cost matrix, penalty for inputs - [accel, steering_speed]
-    Rdk: list = field(
-        default_factory=lambda: np.diag([0.0000001, 100.0])
-    )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
-    Qk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0])
-        # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
-    )  # state error cost matrix, for the next (T) prediction time steps
-    Qfk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0])
-        # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
-    )  # final state error matrix, penalty  for the final state constraints
-    N_IND_SEARCH: int = 20  # Search index number
-    DTK: float = 0.1  # time step [s] kinematic
-    dlk: float = 3.0  # dist step [m] kinematic
-    LENGTH: float = 4.298  # Length of the vehicle [m]
-    WIDTH: float = 1.674  # Width of the vehicle [m]
-    LR: float = 1.50876
-    LF: float = 0.88392
-    WB: float = 0.88392 + 1.50876  # Wheelbase [m]
-    MIN_STEER: float = -0.4189  # maximum steering angle [rad]
-    MAX_STEER: float = 0.4189  # maximum steering angle [rad]
-    MAX_STEER_V: float = 3.2  # maximum steering speed [rad/s]
-    MAX_SPEED: float = 45.0  # maximum speed [m/s]
-    MIN_SPEED: float = 0.0  # minimum backward speed [m/s]
-    MAX_ACCEL: float = 11.5  # maximum acceleration [m/ss]
-    MAX_DECEL: float = -45.0  # maximum acceleration [m/ss]
-
-    MASS: float = 1225.887  # Vehicle mass
+PRETRAINED = False
+PRETRAINED_NAMES = {'model1': ['gp1', 'gp1_likelihood'],
+                    'model2': ['gp2', 'gp2_likelihood']}
 
 
 @dataclass
 class MPCConfigGP:
     NXK: int = 7  # length of kinematic state vector: z = [x, y, vx, yaw angle, vy, yaw rate, steering angle]
     NU: int = 2  # length of input vector: u = = [acceleration, steering speed]
-    TK: int = 15  # finite time horizon length kinematic
+    TK: int = 12  # finite time horizon length kinematic
 
     Rk: list = field(
-        default_factory=lambda: np.diag([0.00001, 10.0])
+        default_factory=lambda: np.diag([0.000005, 10.0])
     )  # input cost matrix, penalty for inputs - [accel, steering_speed]
     Rdk: list = field(
         default_factory=lambda: np.diag([0.000001, 10.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([25.5, 25.5, 5.5, 0.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 5.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # state error cost matrix, for the next (T) prediction time steps
     Qfk: list = field(
-        default_factory=lambda: np.diag([15.5, 15.5, 5.5, 0.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 5.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # final state error matrix, penalty  for the final state constraints
     N_IND_SEARCH: int = 20  # Search index number
@@ -136,16 +98,11 @@ def main():  # after launching this you can run visualization.py to see the resu
     """
 
     # Choose program parameters
-    map_name = 'rounded_rectangle'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape
-    use_dyn_friction = False
+    map_name = 'l_shape'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape
+    use_dyn_friction = True
     control_step = 100.0  # ms
     render_every = 1  # render graphics every n control steps
     constant_speed = True
-
-    # Creating the single-track Motion planner and Controller
-
-    # Init Pure-Pursuit regulator
-    work = {'mass': 1225.88, 'lf': 0.80597534362552312, 'tlad': 10.6461887897713965, 'vgain': 1.0}
 
     # Load map config file
     with open('configs/config_%s.yaml' % map_name) as file:
@@ -153,11 +110,11 @@ def main():  # after launching this you can run visualization.py to see the resu
     conf = Namespace(**conf_dict)
 
     if use_dyn_friction:
-        tpamap_name = './maps/rounded_rectangle/friction_data/rounded_rectangle_tpamap.csv'
-        tpadata_name = './maps/rounded_rectangle/friction_data/rounded_rectangle_tpadata.json'
+        tpamap_name = './maps/l_shape/friction_data/l_shape_friction_gen_input_tpamap.csv'
+        tpadata_name = './maps/l_shape/friction_data/l_shape_friction_gen_input_tpadata.json'
 
         tpamap = np.loadtxt(tpamap_name, delimiter=';', skiprows=1)
-        tpamap *= 1.5  # map is 1.5 times larger than normal
+        tpamap *= 1.0  # map is 1.5 times larger than normal
 
         tpadata = {}
         with open(tpadata_name) as f:
@@ -169,9 +126,9 @@ def main():  # after launching this you can run visualization.py to see the resu
     if constant_speed:
         # waypoints[:, 5] = waypoints[:, 5] * 2.0
         if map_name == 'rounded_rectangle':
-            waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 8.0
+            waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 7.5
         if map_name == 'l_shape':
-            waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 6.5
+            waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 7.5
 
     # init controllers
     planner_pp = PurePursuitPlanner(conf, 0.805975 + 1.50876)  # 0.805975 + 1.50876
@@ -193,11 +150,11 @@ def main():  # after launching this you can run visualization.py to see the resu
         y = e.cars[0].vertices[1::2]
         top, bottom, left, right = max(y), min(y), min(x), max(x)
         e.score_label.x = left
-        e.score_label.y = top - 7000
-        e.left = left - 8000
-        e.right = right + 8000
-        e.top = top + 8000
-        e.bottom = bottom - 8000
+        e.score_label.y = top - 700
+        e.left = left - 1200
+        e.right = right + 1200
+        e.top = top + 1200
+        e.bottom = bottom - 1200
 
         planner_pp.render_waypoints(e)
         draw.draw_debug(e)
@@ -221,14 +178,14 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     # init logger
     log = {'time': [], 'x': [], 'y': [], 'lap_n': [], 'vx': [], 'v_ref': [], 'vx_mean': [], 'vx_var': [], 'vy_mean': [],
-           'vy_var': [], 'theta_mean': [], 'theta_var': [], 'true_vx': [], 'true_vy': [], 'true_yaw_rate': [], 'tracking_error': []}
+           'vy_var': [], 'theta_mean': [], 'theta_var': [], 'true_vx': [], 'true_vy': [], 'true_yaw_rate': [], 'tracking_error': [], 'w1': [], 'w2': []}
 
     log_dataset = {'X0': [], 'X1': [], 'X2': [], 'X3': [], 'X4': [], 'X5': [], 'Y0': [], 'Y1': [], 'Y2': []}
 
     # calc number of sim steps per one control step
     num_of_sim_steps = int(control_step / (env.timestep * 1000.0))
 
-    with open('dataset_1_1', 'r') as f:
+    with open('dataset_0_5', 'r') as f:
         data = json.load(f)
 
     planner_gp_mpc.model.gp_model1.x_measurements[0] = data['X0']
@@ -243,7 +200,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     print(len(planner_gp_mpc.model.gp_model1.x_measurements[0]))
     scaled_x1, scaled_y1 = planner_gp_mpc.model.gp_model1.init_gp()
 
-    with open('dataset_0_5', 'r') as f:
+    with open('dataset_1_1', 'r') as f:
         data = json.load(f)
 
     planner_gp_mpc.model.gp_model2.x_measurements[0] = data['X0']
@@ -263,14 +220,14 @@ def main():  # after launching this you can run visualization.py to see the resu
     if not PRETRAINED:
         print('train model 1')
         print("GP training...")
-        planner_gp_mpc.model.gp_model1.train_gp(scaled_x1, scaled_y1)
+        planner_gp_mpc.model.gp_model1.train_gp(scaled_x1, scaled_y1, method=0)
         print("GP training done")
         print('Model used: GP')
         print('Reference speed: %f' % waypoints[:, 5][0])
 
         print('train model 2')
         print("GP training...")
-        planner_gp_mpc.model.gp_model2.train_gp(scaled_x2, scaled_y2)
+        planner_gp_mpc.model.gp_model2.train_gp(scaled_x2, scaled_y2, method=0)
         print("GP training done")
         print('Model used: GP')
         print('Reference speed: %f' % waypoints[:, 5][0])
@@ -279,10 +236,10 @@ def main():  # after launching this you can run visualization.py to see the resu
             now = datetime.now()
             # dd/mm/YY H:M:S
             dt_string = now.strftime("%d/%m/%Y-%H:%M:%S")
-            
-            torch.save(planner_gp_mpc.model.gp_model1.gp_model.state_dict()     , 'gp1' + dt_string + '.pth')
+
+            torch.save(planner_gp_mpc.model.gp_model1.gp_model.state_dict(), 'gp1' + dt_string + '.pth')
             torch.save(planner_gp_mpc.model.gp_model1.gp_likelihood.state_dict(), 'gp1_likelihood' + dt_string + '.pth')
-            torch.save(planner_gp_mpc.model.gp_model2.gp_model.state_dict()     , 'gp2' + dt_string + '.pth')
+            torch.save(planner_gp_mpc.model.gp_model2.gp_model.state_dict(), 'gp2' + dt_string + '.pth')
             torch.save(planner_gp_mpc.model.gp_model2.gp_likelihood.state_dict(), 'gp2_likelihood' + dt_string + '.pth')
 
         # done training
@@ -293,7 +250,6 @@ def main():  # after launching this you can run visualization.py to see the resu
         model1_names = PRETRAINED_NAMES['model1']
         model2_names = PRETRAINED_NAMES['model2']
 
-
         # Load model1
         state_dict_gp1 = torch.load('trained_models/' + model1_names[0] + '.pth').copy()
         planner_gp_mpc.model.gp_model1.gp_model.load_state_dict(state_dict_gp1)
@@ -303,7 +259,7 @@ def main():  # after launching this you can run visualization.py to see the resu
 
         planner_gp_mpc.model.gp_model1.eval()
         planner_gp_mpc.model.gp_model1.cuda()
-        
+
         # Load model2
         state_dict_gp2 = torch.load('trained_models/' + model2_names[0] + '.pth').copy()
         planner_gp_mpc.model.gp_model2.gp_model.load_state_dict(state_dict_gp2)
@@ -328,7 +284,7 @@ def main():  # after launching this you can run visualization.py to see the resu
                                   env.sim.agents[0].state[10],  # vy
                                   env.sim.agents[0].state[5],  # yaw rate
                                   env.sim.agents[0].state[2],  # steering angle
-                                  ]) + np.random.randn(7) * 0.001
+                                  ]) + np.random.randn(7) * 0.0001
 
         mean, lower, upper = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
         u = [0.0, 0.0]
@@ -336,16 +292,8 @@ def main():  # after launching this you can run visualization.py to see the resu
         total_var = 0.0
         # if not gp_models_trained:
         if gp_models_trained:
-            u, mpc_ref_path_x, mpc_ref_path_y, mpc_pred_x, mpc_pred_y, mpc_ox, mpc_oy = planner_gp_mpc.plan(
-                vehicle_state)
+            u, mpc_ref_path_x, mpc_ref_path_y, mpc_pred_x, mpc_pred_y, mpc_ox, mpc_oy = planner_gp_mpc.plan(vehicle_state)
             u[0] = u[0] / planner_gp_mpc.config.MASS  # Force to acceleration
-
-            if waypoints[:, 5][0] <= 11.6:
-                u[0] += np.random.randn(1)[0] * 0.01
-                u[1] += np.random.randn(1)[0] * 0.001
-            elif waypoints[:, 5][0] < 12.4:
-                u[0] += np.random.randn(1)[0] * 0.005
-                u[1] += np.random.randn(1)[0] * 0.001
 
             # draw predicted states and reference trajectory
             draw.reference_traj_show = np.array([mpc_ref_path_x, mpc_ref_path_y]).T
@@ -355,7 +303,8 @@ def main():  # after launching this you can run visualization.py to see the resu
                                                                      np.array([mpc_ref_path_x[0:2], mpc_ref_path_y[0:2]]).T)
         if gp_models_trained:
             with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                mean, lower, upper, prev_mean1, prev_mean2 = planner_gp_mpc.model.scale_and_predict_model_step(vehicle_state, [u[0] * planner_gp_mpc.config.MASS, u[1]])
+                mean, lower, upper, prev_mean1, prev_mean2 = planner_gp_mpc.model.scale_and_predict_model_step(vehicle_state,
+                                                                                                               [u[0] * planner_gp_mpc.config.MASS, u[1]])
 
         # set correct friction to the environment
         if use_dyn_friction:
@@ -363,8 +312,10 @@ def main():  # after launching this you can run visualization.py to see the resu
             env.params['tire_p_dy1'] = tpadata[str(min_id)][0]  # mu_y
             env.params['tire_p_dx1'] = tpadata[str(min_id)][0] * 1.1  # mu_x
         else:
-            env.params['tire_p_dy1'] = 0.4  # mu_y
-            env.params['tire_p_dx1'] = 0.5  # mu_x
+            env.params['tire_p_dy1'] = 0.58  # mu_y
+            env.params['tire_p_dx1'] = 0.62  # mu_x
+
+        print(env.params['tire_p_dy1'])
 
         # Simulation step
         step_reward = 0.0
@@ -373,13 +324,13 @@ def main():  # after launching this you can run visualization.py to see the resu
             step_reward += rew
         laptime += step_reward
 
-
-        vx_transition = env.sim.agents[0].state[3] + np.random.randn(1)[0] * 0.001 - vehicle_state[2]
-        vy_transition = env.sim.agents[0].state[10] + np.random.randn(1)[0] * 0.001 - vehicle_state[4]
-        yaw_rate_transition = env.sim.agents[0].state[5] + np.random.randn(1)[0] * 0.001 - vehicle_state[5]
+        vx_transition = env.sim.agents[0].state[3] + np.random.randn(1)[0] * 0.0001 - vehicle_state[2]
+        vy_transition = env.sim.agents[0].state[10] + np.random.randn(1)[0] * 0.0001 - vehicle_state[4]
+        yaw_rate_transition = env.sim.agents[0].state[5] + np.random.randn(1)[0] * 0.0001 - vehicle_state[5]
 
         Y_real = np.array([float(vx_transition), float(vy_transition), float(yaw_rate_transition)])
         planner_gp_mpc.model.compute_w(Y_real, prev_mean1, prev_mean2, np.array([u[0] * planner_gp_mpc.config.MASS, u[1]]))
+        # print('W1: %f    W2: %f' % (planner_gp_mpc.model.w1, planner_gp_mpc.model.w2))
 
         # Logging
         log['time'].append(laptime)
@@ -398,6 +349,8 @@ def main():  # after launching this you can run visualization.py to see the resu
         log['true_vy'].append(env.sim.agents[0].state[10] - vehicle_state[4])
         log['true_yaw_rate'].append(env.sim.agents[0].state[5] - vehicle_state[5])
         log['tracking_error'].append(tracking_error)
+        log['w1'].append(float(planner_gp_mpc.model.w1))
+        log['w2'].append(float(planner_gp_mpc.model.w2))
 
         # Rendering
         last_render += 1
