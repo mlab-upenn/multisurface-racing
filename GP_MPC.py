@@ -7,7 +7,7 @@ from regulators.pure_pursuit import *
 from regulators.path_follow_mpc import *
 from models.kinematic import KinematicModel
 from models.extended_kinematic import ExtendedKinematicModel
-from models.GP_model_ensembleing import GPEnsembleModel
+from models.GP_model_ensembling import GPEnsembleModel
 from helpers.closest_point import *
 import torch
 import gpytorch
@@ -132,7 +132,7 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     # Choose program parameters
     model_in_first_lap = 'ext_kinematic'  # options: ext_kinematic, pure_pursuit
-    map_name = 'rounded_rectangle'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape
+    map_name = 'l_shape'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape
     use_dyn_friction = False
     control_step = 50.0  # ms
     render_every = 1  # render graphics every n control steps
@@ -144,7 +144,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     work = {'mass': 1225.88, 'lf': 0.80597534362552312, 'tlad': 10.6461887897713965, 'vgain': 1.0}
 
     # Load map config file
-    with open('config_%s.yaml' % map_name) as file:
+    with open('configs/config_%s.yaml' % map_name) as file:
         conf_dict = yaml.load(file, Loader=yaml.FullLoader)
     conf = Namespace(**conf_dict)
 
@@ -292,7 +292,7 @@ def main():  # after launching this you can run visualization.py to see the resu
             u[0] = u[0] / planner_gp_mpc.config.MASS  # Force to acceleration
 
             if waypoints[:, 5][0] <= 8.0:
-                u[0] += np.random.randn(1)[0] * 0.08
+                u[0] += np.random.randn(1)[0] * 0.2
                 u[1] += np.random.randn(1)[0] * 0.001
             elif waypoints[:, 5][0] < 8.5:
                 u[0] += np.random.randn(1)[0] * 0.05
@@ -314,8 +314,8 @@ def main():  # after launching this you can run visualization.py to see the resu
             env.params['tire_p_dy1'] = tpadata[str(min_id)][0]  # mu_y
             env.params['tire_p_dx1'] = tpadata[str(min_id)][0] * 1.1  # mu_x
         else:
-            env.params['tire_p_dy1'] = 0.4  # mu_y
-            env.params['tire_p_dx1'] = 0.5  # mu_x
+            env.params['tire_p_dy1'] = 1.2  # mu_y
+            env.params['tire_p_dx1'] = 1.3  # mu_x
 
         # Simulation step
         step_reward = 0.0
@@ -331,10 +331,10 @@ def main():  # after launching this you can run visualization.py to see the resu
                 waypoints[:, 5] += np.ones((waypoints[:, 5].shape[0],)) * 0.0003
 
         if map_name == 'l_shape':
-            if env.sim.agents[0].state[3] < 7.5:
-                waypoints[:, 5] += np.ones((waypoints[:, 5].shape[0],)) * 0.0006
+            if env.sim.agents[0].state[3] < 11.5:
+                waypoints[:, 5] += np.ones((waypoints[:, 5].shape[0],)) * 0.00055
             else:
-                waypoints[:, 5] += np.ones((waypoints[:, 5].shape[0],)) * 0.0003
+                waypoints[:, 5] += np.ones((waypoints[:, 5].shape[0],)) * 0.0004
             # if obs['lap_counts'][0] >= 0 and waypoints[:, 5][0] < 10.4:
             #     if env.sim.agents[0].state[3] < 7.0:
             #         waypoints[:, 5] += np.ones((waypoints[:, 5].shape[0],)) * 0.0005
@@ -348,7 +348,7 @@ def main():  # after launching this you can run visualization.py to see the resu
                 if env.sim.agents[0].state[3] < 7.0:
                     waypoints[:, 5] += np.ones((waypoints[:, 5].shape[0],)) * 0.0004
                 else:
-                    waypoints[:, 5] += np.ones((waypoints[:, 5].shape[0],)) * 0.0003
+                    waypoints[:, 5] += np.ones((waypoints[:, 5].shape[0],)) * 0.0002
             else:
                 waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 10.4
 
@@ -383,27 +383,26 @@ def main():  # after launching this you can run visualization.py to see the resu
             if abs((mean[0] - lower[0]) / planner_gp_mpc.model.scaler_y[0].std) >= 2.0 or abs(
                     (mean[1] - lower[1]) / planner_gp_mpc.model.scaler_y[1].std) >= 2.0 or abs(
                     (mean[2] - lower[2]) / planner_gp_mpc.model.scaler_y[2].std) >= 2.0:
-                gather_data_every = 3
+                gather_data_every = 2
             elif 1.0 <= abs((mean[0] - lower[0]) / planner_gp_mpc.model.scaler_y[0].std) < 2.0 or 1.0 <= abs(
                     (mean[1] - lower[1]) / planner_gp_mpc.model.scaler_y[1].std) < 2.0 or 1.0 <= abs(
                     (mean[2] - lower[2]) / planner_gp_mpc.model.scaler_y[2].std) < 2.0:
-                gather_data_every = 6
+                gather_data_every = 4
             else:
-                if env.sim.agents[0].state[10] > 0.5:
+                if env.sim.agents[0].state[10] > 0.5 or env.sim.agents[0].state[2] > 0.1:
                     gather_data_every = 1
                 else:
-                    gather_data_every = 20
+                    gather_data_every = 10
         else:
-            gather_data_every = 10
-
-        # print(gather_data_every)
-        # print(env.sim.agents[0].state[3])
+            gather_data_every = 8
 
         vx_transition = env.sim.agents[0].state[3] + np.random.randn(1)[0] * 0.001 - vehicle_state[2]
         vy_transition = env.sim.agents[0].state[10] + np.random.randn(1)[0] * 0.001 - vehicle_state[4]
         yaw_rate_transition = env.sim.agents[0].state[5] + np.random.randn(1)[0] * 0.001 - vehicle_state[5]
 
-        print(mean[0] - vx_transition)
+        # print(mean[0] - vx_transition)
+        # print(gather_data_every)
+        print(waypoints[:, 5][0])
 
         gather_data += 1
         if gather_data >= gather_data_every:
@@ -442,7 +441,8 @@ def main():  # after launching this you can run visualization.py to see the resu
             print(len(planner_gp_mpc.model.x_measurements[0]))
             gp_model_trained += 1
             print("GP training...")
-            planner_gp_mpc.model.train_gp()
+            scaled_x1, scaled_y1 = planner_gp_mpc.model.init_gp()
+            planner_gp_mpc.model.train_gp(scaled_x1, scaled_y1)
             print("GP training done")
             # obs, step_reward, done, info = env.reset(np.array([[conf.sx * 10, conf.sy * 10, conf.stheta, 0.0, 10.0,
             # 0.0, 0.0]]))
@@ -451,8 +451,8 @@ def main():  # after launching this you can run visualization.py to see the resu
 
             with open('log01', 'w') as f:
                 json.dump(log, f)
-            # with open('dataset_0_5__2', 'w') as f:
-            #     json.dump(log_dataset, f)
+            with open('dataset_driving_1_3', 'w') as f:
+                json.dump(log_dataset, f)
 
         if obs['lap_counts'][0] == 40:
             done = 1

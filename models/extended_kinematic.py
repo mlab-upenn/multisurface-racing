@@ -78,6 +78,18 @@ class ExtendedKinematicModel:
 
         return f
 
+    def batch_get_model_matrix(self, state_vec, control_vec):
+        A_block = []
+        B_block = []
+        C_block = []
+        for t in range(state_vec.shape[1]):
+            A, B, C = self.get_model_matrix(state_vec[:, t], control_vec[:, t])
+            A_block.append(A)
+            B_block.append(B)
+            C_block.append(C)
+
+        return np.array(A_block), np.array(B_block), np.array(C_block)
+
     def get_model_matrix(self, state, control_input):
         x, y, vx, yaw, vy, yaw_rate, steering_angle = state
         Fxr, delta_v = control_input

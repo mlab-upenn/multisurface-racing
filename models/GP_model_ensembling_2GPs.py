@@ -82,16 +82,16 @@ class GPEnsembleModels2GPs:
     def batch_get_model_matrix(self, state_vec, control_vec):
         A1, B1, C1 = self.gp_model1.batch_get_model_matrix(state_vec, control_vec)
         A2, B2, C2 = self.gp_model2.batch_get_model_matrix(state_vec, control_vec)
-        A = self.w1 * A1 + 1.0 - self.w2 * A2
-        B = self.w1 * B1 + 1.0 - self.w2 * B2
-        C = self.w1 * C1 + 1.0 - self.w2 * C2
+        A = self.w1 * A1 + self.w2 * A2
+        B = self.w1 * B1 + self.w2 * B2
+        C = self.w1 * C1 + self.w2 * C2
         return A, B, C
     def get_model_matrix(self, state, control_input):
         A1, B1, C1 = self.gp_model1.get_model_matrix(state, control_input)
         A2, B2, C2 = self.gp_model2.get_model_matrix(state, control_input)
-        A = self.w1 * A1 + 1.0 - self.w2 * A2
-        B = self.w1 * B1 + 1.0 - self.w2 * B2
-        C = self.w1 * C1 + 1.0 - self.w2 * C2
+        A = self.w1 * A1 + self.w2 * A2
+        B = self.w1 * B1 + self.w2 * B2
+        C = self.w1 * C1 + self.w2 * C2
         return A, B, C
 
     def predict_kin_from_dyn(self, states, x0):
