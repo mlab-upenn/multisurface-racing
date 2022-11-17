@@ -98,6 +98,69 @@ model.eval()
 likelihood.eval()
 
 
+def se_kernel(x1, x2, sigma_sq_f, delta_inv, gp_model=None):
+    if gp_model is None:
+        return sigma_sq_f * torch.exp(-0.5 * (x1 - x2).T @ delta_inv @ (x1 - x2)).diag()
+    else:
+        return gp_model.covar_module.forward(x1=x1, x2=x2)
+
+def se_kernel_jac(x1, x2, sigma_sq_f, delta_inv, kxxprime=None):
+    X_tilde = x2 - x1
+
+    if kxxprime is None:
+        k10 = delta_inv @ (X_tilde * se_kernel(x1, x2, sigma_sq_f, delta_inv))
+    else:
+        k10 = delta_inv @ (X_tilde * kxxprime)
+
+    return k10, k10.T.clone()
+
+def se_kernel_hess(x1, x2, x1_is_x2, sigma_sq_f, delta_inv, kxxprime=None):
+    k11 = None
+    if kxxprime is None:
+        kxxprime = se_kernel(x1, x2, sigma_sq_f, delta_inv)
+
+    if x1_is_x2 == False:
+        X_tilde = x2 - x1
+
+        el2 = X_tilde @ X_tilde.T @ delta_inv
+        I   = torch.eye(el2.shape())
+        k11 = delta_inv @ (I - el2) @ kxxprime
+    else:
+        k11 = sigma_sq_f @ delta_inv
+
+    return k11
+
+def find_Vx_closed(x, X, gp_model):
+    sigma_sq_f = torch.tensor([[gp_model.covar_module.outputscale.item()]])
+    delta_inv = torch.sqrt(gp_model.covar_module.base_kernel.lengthscale)
+
+    print("===============")
+    start = time.time()
+
+    kxx = se_kernel(x, x, sigma_sq_f, delta_inv, gp_model)
+    K10_xx, K01_xx = se_kernel_jac(x, x, sigma_sq_f, delta_inv, kxx)
+    K11_xx = se_kernel_hess(x, x, True, sigma_sq_f, delta_inv, kxx)
+    first_term = torch.cat((torch.cat((kxx, K01_xx), dim=1),
+                            torch.cat((K10_xx, K11_xx), dim=1)), dim=0)
+    end = time.time()
+    print("FIRST TERM :: ", end - start)
+
+    print("===============")
+    start = time.time()
+
+    kxX = se_kernel(x, X.reshape(-1,1), sigma_sq_f, delta_inv, gp_model)
+    K10_xX, _ = se_kernel_jac(x, X, sigma_sq_f, delta_inv, kxX)
+    second_term_a = torch.cat((kxX, K10_xX), dim=0)
+    second_term_c = second_term_a.T.double()
+    second_term = second_term_a @ second_term_b @ second_term_c
+
+    end = time.time()
+    print("SECOND TERM :: ", end - start)
+    print("===============")
+
+    V_hatx = first_term - second_term
+    return V_hatx  # first_term.double()
+
 def precompute(X, gp_model, gp_likelihood):
     sigma_squared = gp_likelihood.noise.item()  # sigma_sq_n(x, gp_model, gp_likelihood)
     KXX = k(X.reshape(-1, 1), X.reshape(-1, 1), gp_model).detach().numpy()
@@ -109,6 +172,9 @@ second_term_b = precompute(train_x, model, likelihood)
 
 
 def find_Vx(x, X, gp_model, gp_likelihood):
+    print("===============")
+    start = time.time()
+
     ds = X.reshape(-1, 1)
     kxx = k(x, x, gp_model)
     K10_xx, K01_xx = k_jac(x, x, gp_model)
@@ -118,6 +184,10 @@ def find_Vx(x, X, gp_model, gp_likelihood):
     K11_xx = K11_xx.reshape(x.shape[0], x.shape[0])
     first_term = torch.cat((torch.cat((kxx, K01_xx), dim=1),
                             torch.cat((K10_xx, K11_xx), dim=1)), dim=0)
+    end = time.time()
+    print("FIRST TERM :: ", end - start)
+
+    print("===============")
 
     print("===============")
     start = time.time()
@@ -187,9 +257,17 @@ with torch.no_grad(), gpytorch.settings.fast_pred_var():
     end = time.time()
     print(end - start)
 
+    print('******************************')
     print("Vhatx")
     start = time.time()
     Vhx = find_Vx(point, train_x, model, likelihood)
+    end = time.time()
+    print(end - start)
+    print('******************************')
+
+    print("Vhatx CLOSED FORM")
+    start = time.time()
+    Vhx = find_Vx_closed(point, train_x.reshape(1,-1), model)
     end = time.time()
     print(end - start)
 
@@ -221,8 +299,8 @@ with torch.no_grad():
 
         currY = float(yhat + (deltaX) * jac)
         vars.append(variance)
-        plsTD.append(currY + np.sqrt(variance) * 1.96)
-        mnsTD.append(currY - np.sqrt(variance) * 1.96)
+        plsTD.append(currY + 2 * np.sqrt(variance))
+        mnsTD.append(currY - 2 * np.sqrt(variance))
 
     plt.figure()
     plt.plot(dts, vars)
