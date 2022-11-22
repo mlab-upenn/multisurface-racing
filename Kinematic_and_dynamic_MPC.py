@@ -187,8 +187,8 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     # Choose program parameters
     model_to_use = 'dynamic'  # options: ext_kinematic, pure_pursuit, kinematic, dynamic
-    map_name = 'Nuerburgring'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange
-    rotate_map = False  # !!!! If the car is spawning with bad orientation change value here !!!! TODO Fix here so this is not needed anymore
+    map_name = 'l_shape'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange
+    rotate_map = True  # !!!! If the car is spawning with bad orientation change value here !!!! TODO Fix here so this is not needed anymore
     use_dyn_friction = False
     constant_friction = 0.5
     control_step = 30.0  # ms
