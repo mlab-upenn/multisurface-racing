@@ -9,7 +9,7 @@ import gpytorch
 
 @dataclass
 class Config:
-    DTK: float = 0.1  # time step [s] kinematic
+    DTK: float = 0.02  # time step [s] kinematic
     LENGTH: float = 4.298  # Length of the vehicle [m]
     WIDTH: float = 1.674  # Width of the vehicle [m]
     LR: float = 1.50876
@@ -26,9 +26,14 @@ class Config:
 
 
 # inputs
-datasets_name = ['dataset_0_3_20ms', 'dataset_1_0_20ms']  # max two datasets
-test_percentage = 40.0  # what percentage of the dataset should be used for testing
-testing_dataset = 0  # choose which dataset test part you want to test on
+# datasets_name = ['dataset_0_3_20ms', 'dataset_1_0_20ms']  # max two datasets
+datasets_name = ['dataset_0_3_20ms_final',
+                 'dataset_1_0_20ms_final',
+                 ]  # max two datasets
+test_percentage = 30.0  # what percentage of the dataset should be used for testing
+testing_dataset = 1  # choose which dataset test part you want to test on
+
+np.random.seed(42)
 
 # code
 data_names = ['X0', 'X1', 'X2', 'X3', 'X4', 'X5', 'Y0', 'Y1', 'Y2',  # x(t) and y(t)
@@ -84,8 +89,10 @@ data_method_1_test = np.array(datasets_test[datasets_name[testing_dataset]], dty
 model_exp_1 = GPEnsembleModel(Config())
 
 # add training data to the GP
-model_exp_1.x_measurements = data_method_1_train[:6, :].tolist()
-model_exp_1.y_measurements = data_method_1_train[6:9, :].tolist()
+model_exp_1.x_measurements = np.concatenate([data_method_1_train[:6, :], data_method_1_train[9:15, :]], axis=0, dtype='float32').tolist()
+# model_exp_1.x_measurements = data_method_1_train[:6, :].tolist()
+model_exp_1.y_measurements = np.concatenate([data_method_1_train[6:9, :], data_method_1_train[15:18, :]], axis=0, dtype='float32').tolist()
+# model_exp_1.y_measurements = data_method_1_train[6:9, :].tolist()
 
 print('Method 1, training:')
 scaled_x1, scaled_y1 = model_exp_1.init_gp()
@@ -122,10 +129,13 @@ errors_exp_1 = np.absolute(means_exp_1.T - np.array([data_method_1_test[6], data
 
 print('--------Method 1 results--------')
 print('ax prediction average error: %f' % (np.sum(errors_exp_1[0, :]) / errors_exp_1[0, :].size))
+print('ax prediction RMS error: %f' % (np.sqrt(np.sum(np.square(errors_exp_1[0, :]))/errors_exp_1[0, :].size)))
 print('ax prediction maximum error: %f' % np.max(errors_exp_1[0, :]))
 print('ay prediction average error: %f' % (np.sum(errors_exp_1[1, :]) / errors_exp_1[1, :].size))
+print('ay prediction RMS error: %f' % (np.sqrt(np.sum(np.square(errors_exp_1[1, :]))/errors_exp_1[1, :].size)))
 print('ay prediction maximum error: %f' % np.max(errors_exp_1[1, :]))
 print('yaw rate prediction average error: %f' % (np.sum(errors_exp_1[2, :]) / errors_exp_1[2, :].size))
+print('yaw rate prediction RMS error: %f' % (np.sqrt(np.sum(np.square(errors_exp_1[2, :]))/errors_exp_1[2, :].size)))
 print('yaw rate prediction maximum error: %f' % np.max(errors_exp_1[2, :]))
 print('\n\n')
 
@@ -133,18 +143,21 @@ print('\n\n')
 
 # get training / testing dataset
 data_method_2_train = np.array(datasets_train[datasets_name[testing_dataset]], dtype='float32')
-data_method_2_test = np.array(datasets_test[datasets_name[testing_dataset]], dtype='float32')
+# data_method_2_test = np.array(datasets_test[datasets_name[testing_dataset]], dtype='float32')
+data_method_2_test = np.concatenate([datasets_test[datasets_name[1-testing_dataset]][:9, :], datasets_test[datasets_name[1-testing_dataset]][9:, :]], dtype='float32')
 
 # create GP model
 model_exp_2 = GPEnsembleModel(Config())
 
 # add training data to the GP
-model_exp_2.x_measurements = data_method_2_train[:6, :].tolist()
-model_exp_2.y_measurements = data_method_2_train[6:9, :].tolist()
+model_exp_2.x_measurements = np.concatenate([data_method_2_train[:6, :], data_method_2_train[9:15, :]], axis=0, dtype='float32').tolist()
+# model_exp_2.x_measurements = data_method_2_train[:6, :].tolist()
+model_exp_2.y_measurements = np.concatenate([data_method_2_train[6:9, :], data_method_2_train[15:18, :]], axis=0, dtype='float32').tolist()
+# model_exp_2.y_measurements = data_method_2_train[6:9, :].tolist()
 
 print('Method 2, training:')
 scaled_x1, scaled_y1 = model_exp_2.init_gp()
-model_exp_2.train_gp(scaled_x1, scaled_y1, method=0)
+model_exp_2.train_gp(scaled_x1, scaled_y1)
 
 print('Method 2, testing:')
 means_exp_2 = []
@@ -177,10 +190,13 @@ errors_exp_2 = np.absolute(means_exp_2.T - np.array([data_method_2_test[6], data
 
 print('--------Method 2 results--------')
 print('ax prediction average error: %f' % (np.sum(errors_exp_2[0, :]) / errors_exp_2[0, :].size))
+print('ax prediction RMS error: %f' % (np.sqrt(np.sum(np.square(errors_exp_2[0, :]))/errors_exp_2[0, :].size)))
 print('ax prediction maximum error: %f' % np.max(errors_exp_2[0, :]))
 print('ay prediction average error: %f' % (np.sum(errors_exp_2[1, :]) / errors_exp_2[1, :].size))
+print('ay prediction RMS error: %f' % (np.sqrt(np.sum(np.square(errors_exp_2[1, :]))/errors_exp_2[1, :].size)))
 print('ay prediction maximum error: %f' % np.max(errors_exp_2[1, :]))
 print('yaw rate prediction average error: %f' % (np.sum(errors_exp_2[2, :]) / errors_exp_2[2, :].size))
+print('yaw rate prediction RMS error: %f' % (np.sqrt(np.sum(np.square(errors_exp_2[2, :]))/errors_exp_2[2, :].size)))
 print('yaw rate prediction maximum error: %f' % np.max(errors_exp_2[2, :]))
 
 plt.plot(errors_exp_1[0, :], label='Training on two frictions')

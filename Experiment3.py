@@ -152,12 +152,12 @@ with torch.no_grad(), gpytorch.settings.fast_pred_var():
             data_method_2_test[14][i].astype('float32'),
         ])
         Y_real = np.array([data_method_2_test[15][i].astype('float32'), data_method_2_test[16][i].astype('float32'),
-                           data_method_2_test[17][i].astype('float32')])
+                           data_method_2_test[17][i].astype('float32')]).reshape((3, 1))
 
         # predict Y(t) based on x(t) and W computed in previous step
         _, _, _, mean1, mean2 = model_exp_2.scale_and_predict_model_step(vehicle_state, u)
 
-        model_exp_2.compute_w(Y_real, mean1, mean2, u)
+        model_exp_2.compute_w(Y_real, np.array([mean1, mean2]).squeeze().T, prev_w=np.array([0.5, 0.5]).reshape((2, 1)), eps=0.0, u=u)
 
         # predict Y(t) based on x(t) and W computed in previous step
         mean, lower, upper, _, _ = model_exp_2.scale_and_predict_model_step([0.0, 0.0, data_method_2_test[0][i], 0.0, data_method_2_test[1][i],

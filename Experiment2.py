@@ -27,9 +27,9 @@ class Config:
 
 
 # inputs
-datasets_name = ['dataset_0_3_50ms', 'dataset_1_0_50ms']  # max two datasets
-test_percentage = 20.0  # what percentage of the dataset should be used for testing
-testing_dataset = 1  # choose which dataset test part you want to test on
+datasets_name = ['dataset_0_3_50ms_final', 'dataset_1_0_50ms_final']  # max two datasets
+# datasets_name = ['dataset_0_3_50ms', 'dataset_1_0_50ms']  # max two datasets
+test_percentage = 40.0  # what percentage of the dataset should be used for testing
 
 # code
 data_names = ['X0', 'X1', 'X2', 'X3', 'X4', 'X5', 'Y0', 'Y1', 'Y2',  # x(t) and y(t)
@@ -135,8 +135,8 @@ print('\n\n')
 data_method_2_train_m1 = np.array(datasets_train[datasets_name[0]], dtype='float32')
 data_method_2_train_m2 = np.array(datasets_train[datasets_name[1]], dtype='float32')
 
-arr_data_train_2 = [datasets_test[datasets_name[0]], datasets_test[datasets_name[1]]]
-data_method_2_test = np.concatenate(arr_data_train_2, axis=1, dtype='float32')
+arr_data_test_2 = [datasets_test[datasets_name[0]], datasets_test[datasets_name[1]]]
+data_method_2_test = np.concatenate(arr_data_test_2, axis=1, dtype='float32')
 
 model_exp_2 = GPEnsembleModels2GPs(config=Config())
 
@@ -190,12 +190,12 @@ with torch.no_grad(), gpytorch.settings.fast_pred_var():
             data_method_2_test[14][i].astype('float32'),
         ])
         Y_real = np.array([data_method_2_test[15][i].astype('float32'), data_method_2_test[16][i].astype('float32'),
-                           data_method_2_test[17][i].astype('float32')])
+                           data_method_2_test[17][i].astype('float32')]).reshape((3, 1))
 
         # predict Y(t) based on x(t) and W computed in previous step
         _, _, _, mean1, mean2 = model_exp_2.scale_and_predict_model_step(vehicle_state, u)
 
-        model_exp_2.compute_w(Y_real, mean1, mean2, u)
+        model_exp_2.compute_w(Y_real, np.array([mean1, mean2]).squeeze().T, prev_w=np.array([0.5, 0.5]).reshape((2, 1)), eps=0.0, u=u)
 
         # predict Y(t) based on x(t) and W computed in previous step
         mean, lower, upper, _, _ = model_exp_2.scale_and_predict_model_step([0.0, 0.0, data_method_2_test[0][i], 0.0, data_method_2_test[1][i],
