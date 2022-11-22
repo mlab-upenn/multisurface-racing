@@ -11,15 +11,13 @@ def main():  # after launching this you can run visualization.py to see the resu
     """
 
     # Choose program parameters
-    model_in_first_lap = 'ext_kinematic'  # options: ext_kinematic, pure_pursuit
     map_name = 'rounded_rectangle'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape
-    use_dyn_friction = False
-    render_every = 1  # render graphics every n control steps
+    render_every = 2  # render graphics every n control steps
 
     # Creating the single-track Motion planner and Controller
 
     # Load map config file
-    with open('config_%s.yaml' % map_name) as file:
+    with open('configs/config_%s.yaml' % map_name) as file:
         conf_dict = yaml.load(file, Loader=yaml.FullLoader)
     conf = Namespace(**conf_dict)
 
@@ -31,36 +29,35 @@ def main():  # after launching this you can run visualization.py to see the resu
                    steering_control_mode='vel')
 
     # init vector = [x,y,yaw,steering angle, velocity, yaw_rate, beta]
-    obs, step_reward, done, info = env.reset(
-        np.array([[0.0, 0.0, 0.0, 0.8, 10.0, 0.0, 0.0]]))
+    obs, step_reward, done, info = env.reset(np.array([[0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0]]))
     env.render()
 
     log_dataset = {'X0': [], 'X1': [], 'X2': [], 'X3': [], 'X4': [], 'X5': [], 'Y0': [], 'Y1': [], 'Y2': [],
                    'X0[t-1]': [], 'X1[t-1]': [], 'X2[t-1]': [], 'X3[t-1]': [], 'X4[t-1]': [], 'X5[t-1]': [], 'Y0[t-1]': [], 'Y1[t-1]': [],
                    'Y2[t-1]': []}
 
-    num_of_sim_steps = 50
+    num_of_sim_steps = 50  # dt [ms]
     laptime = 0.0
     last_render = 0
-    gather_data_every = 2  # must be > 1
+    gather_data_every = 3  # must be > 1
+    friction = 0.7
 
-    env.params['tire_p_dy1'] = 1.2  # mu_y
-    env.params['tire_p_dx1'] = 1.3  # mu_x
+    env.params['tire_p_dy1'] = friction * 0.9  # mu_y
+    env.params['tire_p_dx1'] = friction  # mu_x
 
-    # u0_arr = np.array([-6000.0, -5000.0, -4000.0, 4000.0, 5000.0, 6000.0])
-    u0_arr = np.array([-10000.0, 10000.0])
-    u1_arr = np.array([-3.2, -2.2, -1.0, 0.0, 1.0, 2.2, 3.2])
+    u0_arr = np.array([9000.0, 8000.0, 7000.0, -7000.0, -8000.0, -9000.0])
+    u1_arr = np.array([0.001, 0.0, -0.001])
 
-    steering_angle_arr = np.array([0.0])
-    velocity_arr = np.array([3.0, 4.0, 5.0, 6.0, 7.0, 8.0, 9.0, 10.0, 11.0, 11.2, 11.4, 11.6, 11.8, 12.0, 12.2, 12.5, 12.8])
-    yaw_rate_arr = np.array([-2.0, -1.5, -1.0, 0.0, 1.0, 1.5, 2.0])
-    beta_arr = np.array([0.0])
+    steering_angle_arr = np.array([-0.4, -0.3, -0.2, 0.0, 0.2, 0.3, 0.4])
+    velocity_arr = np.array([11.0, 12.0, 13.0, 14.0, 15.0])
+    yaw_rate_arr = np.array([-0.6, -0.4, -0.2, 0.2, 0.4, 0.6])
+    beta_arr = np.array([0.1, -0.1])
 
     np.random.seed(42)  # Not so random - solves everything
 
-    for iter in range(800):
-        if (iter + 1) % 100 == 0:
-            print('Iteration: %d' % iter)
+    for iter in range(1500):
+        # if (iter + 1) % 100 == 0:
+        print('Iteration: %d' % iter)
 
         u0_choice = np.random.choice(u0_arr)
         u1_choice = np.random.choice(u1_arr)
@@ -76,8 +73,11 @@ def main():  # after launching this you can run visualization.py to see the resu
             np.array([[0.0, 0.0, 0.0, steering_angle_choice, velocity_choice, yaw_rate_choice, beta_choice]]))
         env.render()
         gather_data = 0
+        done_iter = 0
 
-        for i in range(2):
+        print([steering_angle_choice, velocity_choice, yaw_rate_choice, beta_choice, u0_choice, u1_choice])
+
+        for i in range(3):
 
             vehicle_state = np.array([env.sim.agents[0].state[0],
                                       env.sim.agents[0].state[1],
@@ -88,12 +88,19 @@ def main():  # after launching this you can run visualization.py to see the resu
                                       env.sim.agents[0].state[2],  # steering angle
                                       ]) + np.random.randn(7) * 0.00001
 
+            # print(vehicle_state[2:])
+
             # Simulation step
             step_reward = 0.0
             for i in range(num_of_sim_steps):
                 obs, rew, _, info = env.step(np.array([[u[1], u[0]]]))
                 step_reward += rew
+                if env.sim.agents[0].state[3] < 0.1:
+                    done_iter = 1
+                    break
             laptime += step_reward
+            if done_iter:
+                break
 
             # Rendering
             last_render += 1
@@ -131,7 +138,7 @@ def main():  # after launching this you can run visualization.py to see the resu
                      float(vx_transition), float(vy_transition), float(yaw_rate_transition)]
 
     print('Data saved...')
-    with open('dataset_1_3_50ms_ex4', 'w') as f:
+    with open('dataset_0_7_50ms_final_v2', 'w') as f:
         json.dump(log_dataset, f)
 
 
