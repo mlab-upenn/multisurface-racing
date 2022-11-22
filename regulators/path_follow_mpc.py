@@ -1,6 +1,6 @@
 # MIT License
 
-# Copyright (c) Hongrui Zheng, Johannes Betz
+# Copyright (c) Tomas Nagy, Ahmad Amine, Hongrui Zheng, Johannes Betz
 
 # Permission is hereby granted, free of charge, to any person obtaining a copy
 # of this software and associated documentation files (the "Software"), to deal
@@ -23,16 +23,17 @@
 """
 Dynamic Single Track MPC waypoint tracker
 
-Author: Hongrui Zheng, Johannes Betz, Ahmad Amine
+Author: Tomas Nagy, Hongrui Zheng, Johannes Betz, Ahmad Amine
 Last Modified: 8/1/22
 """
-
+import time
 from dataclasses import dataclass, field
 import cvxpy
 import numpy as np
 from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix, diags
 from numba import njit
+
 
 @njit(cache=True)
 def nearest_point(point, trajectory):
@@ -99,6 +100,7 @@ class STMPCPlanner:
         self.origin_switch = 1
         self.init_flag = 0
         self.mpc_prob_init()
+        self.solve_time = time.time()
 
     def plan(self, states, waypoints=None):
         """
@@ -196,8 +198,16 @@ class STMPCPlanner:
 
         # Find nearest index/setpoint from where the trajectories are calculated
         _, dist, _, _, ind = nearest_point(np.array([position[0], position[1]]), path[:, (1, 2)])
+        # path[:, 5]
 
-        reference = self.get_reference_trajectory(np.ones(self.config.TK) * abs(speed), dist, ind, path)
+        speeds = np.ones(self.config.TK) * speed  # method 1
+
+        # speeds = np.take(path[:, 5], range(ind, ind + self.config.TK), mode='wrap')  # method 2
+
+        # speeds_ref = np.take(path[:, 5], range(ind, ind + self.config.TK), mode='wrap')  # method 3
+        # speeds = (speeds_ref + speed) / 2.0
+
+        reference = self.get_reference_trajectory(speeds, dist, ind, path)
 
         reference[3, :][reference[3, :] - orientation > 5] = np.abs(
             reference[3, :][reference[3, :] - orientation > 5] - (2 * np.pi))
@@ -346,10 +356,14 @@ class STMPCPlanner:
 
         self.ref_traj_k.value = ref_traj
 
+        time_start = time.time()
         # Solve the optimization problem in CVXPY
         # Solver selections: cvxpy.OSQP; cvxpy.GUROBI
         # self.MPC_prob.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
-        self.MPC_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.1, eps_abs=0.001, eps_rel=0.001, verbose=False, warm_start=True)
+        self.MPC_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.01, eps_abs=0.0005, eps_rel=0.0005, verbose=False, warm_start=True)
+        time_end = time.time()
+        # print(f'Solving time = {time_end - time_start}')
+        self.solve_time = time_end - time_start
 
         if self.MPC_prob.status == cvxpy.OPTIMAL or self.MPC_prob.status == cvxpy.OPTIMAL_INACCURATE:
             o_states = self.xk.value
@@ -376,7 +390,7 @@ class STMPCPlanner:
 
         # Call the Motion Prediction function: Predict the vehicle motion for x-steps
 
-        if not np.any(np.isnan(self.states_output)):
+        if not np.any(np.isnan(self.states_output)):  # and False
             state_prediction = self.model.predict_kin_from_dyn(self.states_output, x0)
             input_prediction = np.zeros((self.config.NU, self.config.TK + 1))
         else:

@@ -191,13 +191,14 @@ class GPEnsembleModelsNGPs:
         self.prev_w_var.value = prev_w
 
         objective = cvxpy.sum_squares(self.Y_par - self.F_par @ self.w_var)
-        # objective += eps * cvxpy.sum_squares(self.w_var - self.prev_w_var)
+        objective += eps * cvxpy.norm(self.w_var - self.prev_w_var, 1)
 
         constraints = [self.w_var >= 0.0, self.w_var <= 1.0, cvxpy.sum(self.w_var) == 1.0]
         self.w_prob = cvxpy.Problem(cvxpy.Minimize(objective), constraints)
         self.w_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.1, eps_abs=0.001, eps_rel=0.001, verbose=False, warm_start=True)
         # print('W1: %f    W2: %f' % (w.value[0], w.value[1]))
         self.w = self.w_var.value
+        # self.w = np.array([0.0, 1.0])
         # self.w1 = self.w_var.value[0]
         # self.w2 = self.w_var.value[1]
 
@@ -212,6 +213,7 @@ class GPEnsembleModelsNGPs:
             # self.w1 = self.w_var.value[0]
             # self.w2 = self.w_var.value[1]
             self.w = self.w_var.value
+            # self.w = np.array([0.0, 1.0])
             # print('W1: %f    W2: %f' % (w.value[0], w.value[1]))
         else:
             return self.init_w_opt_prob(Y_reals, means, prev_w, eps)

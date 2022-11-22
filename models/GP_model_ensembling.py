@@ -1,9 +1,11 @@
+import numpy
 import numpy as np
 import torch
 import gpytorch
 from torch.autograd.functional import jacobian
 import os
 import time
+import gc
 
 np.set_printoptions(precision=4, suppress=True)
 
@@ -36,9 +38,15 @@ class BatchIndependentMultitaskGPModel(gpytorch.models.ExactGP):
         super().__init__(train_x, train_y, likelihood)
         self.mean_module = gpytorch.means.ConstantMean(batch_shape=torch.Size([3]))
         self.covar_module = gpytorch.kernels.ScaleKernel(
-            gpytorch.kernels.RBFKernel(batch_shape=torch.Size([3])),
+            gpytorch.kernels.RBFKernel(batch_shape=torch.Size([3]), ard_num_dims=6),
+            # gpytorch.kernels.RQKernel(batch_shape=torch.Size([3])),
+            # gpytorch.kernels.MaternKernel(nu=1.5, batch_shape=torch.Size([3])),
             batch_shape=torch.Size([3])
         )
+        # self.covar_module = gpytorch.kernels.ProductKernel(
+        #     gpytorch.kernels.RBFKernel(batch_shape=torch.Size([3])),
+        #     gpytorch.kernels.PeriodicKernel(batch_shape=torch.Size([3])),
+        # )
 
     def forward(self, x):
         mean_x = self.mean_module(x)
@@ -66,6 +74,9 @@ class GPEnsembleModel:
         self.x_samples = [[] for i in range(6)]
         self.y_samples = [[] for i in range(3)]
 
+        self.train_x_scaled = None
+        self.train_y_scaled = None
+
         self.scaler_x = [TorchNormalizer(), TorchNormalizer(), TorchNormalizer(),
                          TorchNormalizer(), TorchNormalizer(), TorchNormalizer()]
         self.scaler_y = [TorchNormalizer(), TorchNormalizer(), TorchNormalizer()]
@@ -74,6 +85,9 @@ class GPEnsembleModel:
 
         self.gp_likelihood = None
         self.gp_model = None
+
+        self.means = None
+        self.std = None
 
     def clip_input(self, u):
         # u matrix Nx2
@@ -161,24 +175,36 @@ class GPEnsembleModel:
         h2 = np.zeros((x.shape[0], 6))
         h3 = np.zeros((x.shape[0], 6))
 
-        mean  = np.zeros((x.shape[0], 3))
+        mean = np.zeros((x.shape[0], 3))
         lower = np.zeros((x.shape[0], 3))
         upper = np.zeros((x.shape[0], 3))
 
-        gp_states = torch.tensor(np.vstack((state_vec[[2,4,5,6],:], control_vec)).T, dtype=torch.float, device=torch.device('cuda'))
+        gp_states = torch.tensor(np.vstack((state_vec[[2, 4, 5, 6], :], control_vec)).T, dtype=torch.float, device=torch.device('cuda'))
         if self.trained:
             with torch.no_grad(), gpytorch.settings.fast_pred_var():
                 def batch_jacobian(f, x):
                     f_sum = lambda x: torch.sum(f(x), axis=0)
                     return jacobian(f_sum, x)
+
                 jac = batch_jacobian(fun, gp_states)
 
                 # x, y, vx, yaw angle, vy, yaw rate, steering angle
+                # start = time.time()
                 mean, lower, upper = self.scale_and_predict_model_step(state_vec, control_vec)
+                # end = time.time()
+                # print(end - start)
 
                 h1 = jac[0].cpu().numpy()
                 h2 = jac[1].cpu().numpy()
                 h3 = jac[2].cpu().numpy()
+
+                # mean1_test, _, _ = self.scale_and_predict_model_step(state_vec[:, 0], control_vec[:, 0])
+                # mean1_test = mean1_test.squeeze()
+                # mean2_test = self.for_jacobian_comp(gp_states[0]).squeeze().numpy()
+                #
+                # print(np.isclose(mean2_test[0], mean1_test[0], rtol=1.e-3, atol=1.e-5))
+                # print(np.isclose(mean2_test[1], mean1_test[1], rtol=1.e-3, atol=1.e-5))
+                # print(np.isclose(mean2_test[2], mean1_test[2], rtol=1.e-3, atol=1.e-5))
 
         # State (or system) matrix A, 7x7
         A = np.zeros((x.shape[0], self.config.NXK, self.config.NXK))
@@ -199,21 +225,21 @@ class GPEnsembleModel:
         A[:, 1, 4] = self.config.DTK * np.cos(yaw)
 
         A[range(x.shape[0]), 2, 2] += h1[range(x.shape[0]), 0]  # dh1/dvx
-        A[range(x.shape[0]), 2, 4]  = h1[range(x.shape[0]), 1]  # dh1/dvy
-        A[range(x.shape[0]), 2, 5]  = h1[range(x.shape[0]), 2]  # dh1/d omega
-        A[range(x.shape[0]), 2, 6]  = h1[range(x.shape[0]), 3]  # dh1/d delta
+        A[range(x.shape[0]), 2, 4] = h1[range(x.shape[0]), 1]  # dh1/dvy
+        A[range(x.shape[0]), 2, 5] = h1[range(x.shape[0]), 2]  # dh1/d omega
+        A[range(x.shape[0]), 2, 6] = h1[range(x.shape[0]), 3]  # dh1/d delta
 
         A[:, 3, 5] = self.config.DTK * 1.0
 
-        A[range(x.shape[0]), 4, 2]  = h2[range(x.shape[0]), 0]  # dh2/dvx
+        A[range(x.shape[0]), 4, 2] = h2[range(x.shape[0]), 0]  # dh2/dvx
         A[range(x.shape[0]), 4, 4] += h2[range(x.shape[0]), 1]  # dh2/dvy
-        A[range(x.shape[0]), 4, 5]  = h2[range(x.shape[0]), 2]  # dh2/d omega
-        A[range(x.shape[0]), 4, 6]  = h2[range(x.shape[0]), 3]  # dh2/d delta
+        A[range(x.shape[0]), 4, 5] = h2[range(x.shape[0]), 2]  # dh2/d omega
+        A[range(x.shape[0]), 4, 6] = h2[range(x.shape[0]), 3]  # dh2/d delta
 
-        A[range(x.shape[0]), 5, 2]  = h3[range(x.shape[0]), 0]  # dh3/dvx
-        A[range(x.shape[0]), 5, 4]  = h3[range(x.shape[0]), 1]  # dh3/dvy
+        A[range(x.shape[0]), 5, 2] = h3[range(x.shape[0]), 0]  # dh3/dvx
+        A[range(x.shape[0]), 5, 4] = h3[range(x.shape[0]), 1]  # dh3/dvy
         A[range(x.shape[0]), 5, 5] += h3[range(x.shape[0]), 2]  # dh3/d omega
-        A[range(x.shape[0]), 5, 6]  = h3[range(x.shape[0]), 3]  # dh3/d delta
+        A[range(x.shape[0]), 5, 6] = h3[range(x.shape[0]), 3]  # dh3/d delta
 
         # Input Matrix B; 4x2
         B = np.zeros((x.shape[0], self.config.NXK, self.config.NU))
@@ -230,13 +256,13 @@ class GPEnsembleModel:
         C[:, 1] = self.config.DTK * (- yaw * vx * np.cos(yaw) + yaw * vy * np.sin(yaw))
         C[range(x.shape[0]), 2] = mean[0, range(x.shape[0])] - h1[range(x.shape[0]), 0] * vx - h1[range(x.shape[0]), 1] * vy \
                                   - h1[range(x.shape[0]), 2] * yaw_rate - h1[range(x.shape[0]), 3] * steering_angle - h1[
-                                    range(x.shape[0]), 4] * Fxr - h1[range(x.shape[0]), 5] * delta_v
+                                      range(x.shape[0]), 4] * Fxr - h1[range(x.shape[0]), 5] * delta_v
         C[range(x.shape[0]), 4] = mean[1, range(x.shape[0])] - h2[range(x.shape[0]), 0] * vx - h2[range(x.shape[0]), 1] * vy \
                                   - h2[range(x.shape[0]), 2] * yaw_rate - h2[range(x.shape[0]), 3] * steering_angle - h2[
-                                    range(x.shape[0]), 4] * Fxr - h2[range(x.shape[0]), 5] * delta_v
+                                      range(x.shape[0]), 4] * Fxr - h2[range(x.shape[0]), 5] * delta_v
         C[range(x.shape[0]), 5] = mean[2, range(x.shape[0])] - h3[range(x.shape[0]), 0] * vx - h3[range(x.shape[0]), 1] * vy \
                                   - h3[range(x.shape[0]), 2] * yaw_rate - h3[range(x.shape[0]), 3] * steering_angle - h3[
-                                    range(x.shape[0]), 4] * Fxr - h3[range(x.shape[0]), 5] * delta_v
+                                      range(x.shape[0]), 4] * Fxr - h3[range(x.shape[0]), 5] * delta_v
 
         # print("Sigma %.6f     Mean %.6f" % (np.abs(mean[2] - lower[2]), mean[2]))
         # print(A)
@@ -371,29 +397,32 @@ class GPEnsembleModel:
         return predicted_states, input_prediction
 
     def scale_and_predict_model_step(self, state, control_input):
-        point = torch.tensor([self.scaler_x[0].transform(state[2]),
-                              self.scaler_x[1].transform(state[4]),
-                              self.scaler_x[2].transform(state[5]),
-                              self.scaler_x[3].transform(state[6]),
-                              self.scaler_x[4].transform(control_input[0]),  # control_input[0, i - 1]
-                              self.scaler_x[5].transform(control_input[1]),
-                              ], dtype=torch.float, device=torch.device('cuda')).reshape((-1, 6))
+
+        point = torch.from_numpy(np.array([self.scaler_x[0].transform(state[2]),
+                                           self.scaler_x[1].transform(state[4]),
+                                           self.scaler_x[2].transform(state[5]),
+                                           self.scaler_x[3].transform(state[6]),
+                                           self.scaler_x[4].transform(control_input[0]),  # control_input[0, i - 1]
+                                           self.scaler_x[5].transform(control_input[1]),
+                                           ], dtype=numpy.float32)).reshape((-1, 6)).cuda()
 
         mean, lower, upper = self.predict_model_step(point)
-
+        if len(lower.shape) == 1:
+            lower = lower.reshape(1, -1)
+            upper = upper.reshape(1, -1)
         scaled_mean = np.array([self.scaler_y[0].inverse_transform(mean[:, 0]).detach().numpy(),
                                 self.scaler_y[1].inverse_transform(mean[:, 1]).detach().numpy(),
                                 self.scaler_y[2].inverse_transform(mean[:, 2]).detach().numpy(),
                                 ])
 
-        scaled_lower = np.array([self.scaler_y[0].inverse_transform(lower[0]).detach().numpy(),
-                                 self.scaler_y[1].inverse_transform(lower[1]).detach().numpy(),
-                                 self.scaler_y[2].inverse_transform(lower[2]).detach().numpy(),
+        scaled_lower = np.array([self.scaler_y[0].inverse_transform(lower[:, 0]).detach().numpy(),
+                                 self.scaler_y[1].inverse_transform(lower[:, 1]).detach().numpy(),
+                                 self.scaler_y[2].inverse_transform(lower[:, 2]).detach().numpy(),
                                  ])
 
-        scaled_upper = np.array([self.scaler_y[0].inverse_transform(upper[0]).detach().numpy(),
-                                 self.scaler_y[1].inverse_transform(upper[1]).detach().numpy(),
-                                 self.scaler_y[2].inverse_transform(upper[2]).detach().numpy(),
+        scaled_upper = np.array([self.scaler_y[0].inverse_transform(upper[:, 0]).detach().numpy(),
+                                 self.scaler_y[1].inverse_transform(upper[:, 1]).detach().numpy(),
+                                 self.scaler_y[2].inverse_transform(upper[:, 2]).detach().numpy(),
                                  ])
 
         return scaled_mean, scaled_lower, scaled_upper
@@ -453,15 +482,15 @@ class GPEnsembleModel:
         train_y = train_y.contiguous()
 
         train_x_scaled = torch.transpose(torch.vstack((self.scaler_x[0].fit_transform(train_x[0]),
-                                                        self.scaler_x[1].fit_transform(train_x[1]),
-                                                        self.scaler_x[2].fit_transform(train_x[2]),
-                                                        self.scaler_x[3].fit_transform(train_x[3]),
-                                                        self.scaler_x[4].fit_transform(train_x[4]),
-                                                        self.scaler_x[5].fit_transform(train_x[5]),)), 0, 1).cuda()
+                                                       self.scaler_x[1].fit_transform(train_x[1]),
+                                                       self.scaler_x[2].fit_transform(train_x[2]),
+                                                       self.scaler_x[3].fit_transform(train_x[3]),
+                                                       self.scaler_x[4].fit_transform(train_x[4]),
+                                                       self.scaler_x[5].fit_transform(train_x[5]),)), 0, 1).cuda()
 
         train_y_scaled = torch.transpose(torch.vstack((self.scaler_y[0].fit_transform(train_y[0]),
-                                                        self.scaler_y[1].fit_transform(train_y[1]),
-                                                        self.scaler_y[2].fit_transform(train_y[2]),)), 0, 1).cuda()
+                                                       self.scaler_y[1].fit_transform(train_y[1]),
+                                                       self.scaler_y[2].fit_transform(train_y[2]),)), 0, 1).cuda()
 
         self.gp_likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(num_tasks=3)
         self.gp_model = BatchIndependentMultitaskGPModel(train_x_scaled, train_y_scaled, self.gp_likelihood)
@@ -484,53 +513,174 @@ class GPEnsembleModel:
         self.gp_likelihood.eval()
 
     def train_gp(self, train_x_scaled, train_y_scaled, method=0):
+        self.gp_model = self.gp_model.cuda()
+        self.gp_likelihood = self.gp_likelihood.cuda()
 
-        for i in range(1):
-            #
-            #     if not self.trained:
-            #         for _ in range(2):
-            #             for j in range(6):
-            #                 self.x_samples[j].append(self.x_measurements[j].pop(0))
-            #             for j in range(3):
-            #                 self.y_samples[j].append(self.y_measurements[j].pop(0))
-            #     else:
-            #         errors = []
-            #         if i <= 12:
-            #             for k in range(len(self.x_measurements[0])):
-            #                 mean, lower, upper = self.scale_and_predict_model_step(
-            #                     [0, 0, self.x_measurements[0][k], 0, self.x_measurements[1][k], self.x_measurements[2][k],
-            #                      self.x_measurements[3][k]], [self.x_measurements[4][k], 0, self.x_measurements[5][k]])
-            #                 errors.append(float(abs(upper[2] - mean[2])))
-            #         elif i <= 24:
-            #             for k in range(len(self.x_measurements[0])):
-            #                 mean, lower, upper = self.scale_and_predict_model_step(
-            #                     [0, 0, self.x_measurements[0][k], 0, self.x_measurements[1][k], self.x_measurements[2][k],
-            #                      self.x_measurements[3][k]], [self.x_measurements[4][k], 0, self.x_measurements[5][k]])
-            #                 errors.append(float(abs(upper[0] - mean[0])))
-            #         elif i <= 36:
-            #             for k in range(len(self.x_measurements[0])):
-            #                 mean, lower, upper = self.scale_and_predict_model_step(
-            #                     [0, 0, self.x_measurements[0][k], 0, self.x_measurements[1][k], self.x_measurements[2][k],
-            #                      self.x_measurements[3][k]], [self.x_measurements[4][k], 0, self.x_measurements[5][k]])
-            #                 errors.append(float(abs(upper[1] - mean[1])))
-            #         else:
-            #             for k in range(len(self.x_measurements[0])):
-            #                 mean, lower, upper = self.scale_and_predict_model_step(
-            #                     [0, 0, self.x_measurements[0][k], 0, self.x_measurements[1][k], self.x_measurements[2][k],
-            #                      self.x_measurements[3][k]], [self.x_measurements[4][k], 0, self.x_measurements[5][k]])
-            #                 errors.append(float(abs((upper[0] - mean[0]) / self.scaler_y[0].std) + abs(
-            #                     (upper[1] - mean[1]) / self.scaler_y[1].std) + abs((upper[2] - mean[2]) / self.scaler_y[2].std)))
-            #
-            #         idx = min(range(len(errors)), key=errors.__getitem__)
-            #         for j in range(6):
-            #             self.x_samples[j].append(self.x_measurements[j].pop(idx))
-            #         for j in range(3):
-            #             self.y_samples[j].append(self.y_measurements[j].pop(idx))
+        if method == 0:
+            training_iterations = 300
+        else:
+            training_iterations = 1000
+
+        # Find optimal model hyper-parameters
+        self.gp_model.train()
+        self.gp_likelihood.train()
+
+        # Use the adam optimizer
+        optimizer = torch.optim.Adam(self.gp_model.parameters(), lr=0.02)  # Includes GaussianLikelihood parameters
+
+        # "Loss" for GPs - the marginal log likelihood
+        mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.gp_likelihood, self.gp_model)
+
+        for i in range(training_iterations):
+            if method == 0:
+                for g in optimizer.param_groups:
+                    if i < 50:
+                        g['lr'] = 0.1
+                    elif i < 100:
+                        g['lr'] = 0.0001
+                    else:
+                        g['lr'] = 0.000001
+
+            if method == 1:
+                for g in optimizer.param_groups:
+                    if i < 500:
+                        g['lr'] = 0.01
+                    elif i < 600:
+                        g['lr'] = 0.001
+                    elif i < 800:
+                        g['lr'] = 0.0001
+                    else:
+                        g['lr'] = 0.00001
+
+            optimizer.zero_grad()
+            output = self.gp_likelihood(self.gp_model(train_x_scaled))
+            loss = -mll(output, train_y_scaled)
+            loss.backward()
+            if i % 99 == 0:
+                print('Iter %d/%d - Loss: %.3f' % (i + 1, training_iterations, loss.item()))
+            optimizer.step()
+
+        # Set into eval mode
+        self.gp_model.eval()
+        self.gp_likelihood.eval()
+        self.trained = True
+        print(len(self.x_samples[0]))
+
+    def train_gp_min_variance(self, num_of_new_samples=40):
+        st_model = None
+        st_like = None
+        for i in range(num_of_new_samples):
+            torch.cuda.empty_cache()
+            if not self.trained:
+                for _ in range(2):
+                    for j in range(6):
+                        self.x_samples[j].append(self.x_measurements[j].pop(0))
+                    for j in range(3):
+                        self.y_samples[j].append(self.y_measurements[j].pop(0))
+            else:
+                errors = []
+
+                state_vect = np.array([
+                    np.zeros(len(self.x_measurements[0])),
+                    np.zeros(len(self.x_measurements[0])),
+                    self.x_measurements[0],
+                    np.zeros(len(self.x_measurements[0])),
+                    self.x_measurements[1],
+                    self.x_measurements[2],
+                    self.x_measurements[3],
+                ])
+                control_vect = np.array([self.x_measurements[4], self.x_measurements[5]])
+
+                with torch.no_grad(), gpytorch.settings.fast_pred_var():
+                    mean, lower, upper = self.scale_and_predict_model_step(state_vect, control_vect)
+
+                if i <= num_of_new_samples / 4.0:
+                    errors = abs(upper[2] - mean[2])
+                elif i <= num_of_new_samples / 4.0 * 2.0:
+                    errors = abs(upper[0] - mean[0])
+                elif i <= num_of_new_samples / 4.0 * 3.0:
+                    errors = abs(upper[1] - mean[1])
+                # elif i <= num_of_new_samples / 5.0 * 4.0:
+                #     errors = np.abs((upper[0] - mean[0]) / self.scaler_y[0].std) + np.abs(
+                #         (upper[1] - mean[1]) / self.scaler_y[1].std) + np.abs((upper[2] - mean[2]) / self.scaler_y[2].std)
+                else:
+                    errors = abs(mean[1] - self.y_measurements[1])
+                    # errors = 1.0 - abs(upper[1] - mean[1])
+
+                if np.max(errors.shape) == 0:
+                    break
+
+                idx = np.argmax(errors)
+
+                for j in range(6):
+                    self.x_samples[j].append(self.x_measurements[j].pop(idx))
+                for j in range(3):
+                    self.y_samples[j].append(self.y_measurements[j].pop(idx))
+
+            train_x = torch.tensor([self.x_samples[k] for k in range(6)])
+            train_y = torch.tensor([self.y_samples[k] for k in range(3)])
+            train_y = train_y.contiguous()
+
+            if self.train_x_scaled is not None and self.train_y_scaled is not None:
+                self.train_x_scaled.cpu()
+                del self.train_x_scaled
+                self.train_y_scaled.cpu()
+                del self.train_y_scaled
+                gc.collect()
+                torch.cuda.empty_cache()
+
+            self.train_x_scaled = torch.transpose(torch.vstack((self.scaler_x[0].fit_transform(train_x[0]),
+                                                                self.scaler_x[1].fit_transform(train_x[1]),
+                                                                self.scaler_x[2].fit_transform(train_x[2]),
+                                                                self.scaler_x[3].fit_transform(train_x[3]),
+                                                                self.scaler_x[4].fit_transform(train_x[4]),
+                                                                self.scaler_x[5].fit_transform(train_x[5]),)), 0, 1).cuda()
+
+            self.train_y_scaled = torch.transpose(torch.vstack((self.scaler_y[0].fit_transform(train_y[0]),
+                                                                self.scaler_y[1].fit_transform(train_y[1]),
+                                                                self.scaler_y[2].fit_transform(train_y[2]),)), 0, 1).cuda()
+
+            if self.gp_likelihood is not None:
+                self.gp_likelihood.cpu()
+                del self.gp_likelihood
+                gc.collect()
+                torch.cuda.empty_cache()
+            self.gp_likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(num_tasks=3,
+                                                                                  # noise_prior=gpytorch.priors.SmoothedBoxPrior(0.0015, 1.5, sigma=0.0005)
+                                                                                  )
+
+            if self.gp_model is not None:
+                self.gp_model.cpu()
+                del self.gp_model
+                gc.collect()
+                torch.cuda.empty_cache()
+            self.gp_model = BatchIndependentMultitaskGPModel(self.train_x_scaled, self.train_y_scaled, self.gp_likelihood)
+
+            if st_model is not None and st_like is not None:
+                self.gp_model.load_state_dict(st_model)
+                self.gp_likelihood.load_state_dict(st_like)
+
+            if self.means is not None:
+                self.means.cpu()
+                del self.means
+                gc.collect()
+                torch.cuda.empty_cache()
+            self.means = torch.tensor([[self.scaler_x[0].mean, self.scaler_x[1].mean, self.scaler_x[2].mean,
+                                        self.scaler_x[3].mean, self.scaler_x[4].mean, self.scaler_x[5].mean]], device=torch.device('cuda'))
+
+            if self.std is not None:
+                self.std.cpu()
+                del self.std
+                gc.collect()
+                torch.cuda.empty_cache()
+            self.std = torch.tensor([[self.scaler_x[0].std, self.scaler_x[1].std, self.scaler_x[2].std,
+                                      self.scaler_x[3].std, self.scaler_x[4].std, self.scaler_x[5].std]], device=torch.device('cuda'))
+
             self.gp_model = self.gp_model.cuda()
             self.gp_likelihood = self.gp_likelihood.cuda()
 
-            if method == 0:
-                training_iterations = 300
+            if st_model is not None and st_like is not None:
+                training_iterations = 1
             else:
                 training_iterations = 500
 
@@ -539,39 +689,37 @@ class GPEnsembleModel:
             self.gp_likelihood.train()
 
             # Use the adam optimizer
-            optimizer = torch.optim.Adam(self.gp_model.parameters(), lr=0.02)  # Includes GaussianLikelihood parameters
-
+            optimizer = torch.optim.Adam(self.gp_model.parameters(), lr=0.0001)  # Includes GaussianLikelihood parameters
+            # self.gp_model.state_dict()
+            # self.gp_model.load_state_dict(st)
             # "Loss" for GPs - the marginal log likelihood
             mll = gpytorch.mlls.ExactMarginalLogLikelihood(self.gp_likelihood, self.gp_model)
 
-            for i in range(training_iterations):
-                if method == 0:
+            for k in range(training_iterations):
+                if st_model is None or st_like is None:
                     for g in optimizer.param_groups:
-                        if i < 50:
-                            g['lr'] = 0.1
-                        elif i < 100:
-                            g['lr'] = 0.0001
-                        else:
-                            g['lr'] = 0.000001
-
-                if method == 1:
-                    for g in optimizer.param_groups:
-                        if i < 100:
-                            g['lr'] = 0.1
-                        elif i < 200:
-                            g['lr'] = 0.0001
-                        elif i < 400:
-                            g['lr'] = 0.00001
-                        else:
-                            g['lr'] = 0.000005
+                        if st_model is None or st_like is None:
+                            if k < 50:
+                                g['lr'] = 0.1
+                            elif k < 100:
+                                g['lr'] = 0.0001
+                            else:
+                                g['lr'] = 0.000001
 
                 optimizer.zero_grad()
-                output = self.gp_likelihood(self.gp_model(train_x_scaled))
-                loss = -mll(output, train_y_scaled)
+                output = self.gp_likelihood(self.gp_model(self.train_x_scaled))
+                loss = -mll(output, self.train_y_scaled)
                 loss.backward()
-                if i % 99 == 0:
-                    print('Iter %d/%d - Loss: %.3f' % (i + 1, training_iterations, loss.item()))
+                if k % 99 == 0:
+                    print('Iter %d/%d - Loss: %.3f' % (k + 1, training_iterations, loss.item()))
                 optimizer.step()
+
+            if (i + 1) % 500 == 0 or i == num_of_new_samples - 2:
+                st_like = None
+                st_model = None
+            else:
+                st_model = self.gp_model.state_dict()
+                st_like = self.gp_likelihood.state_dict()
 
             # Set into eval mode
             self.gp_model.eval()
@@ -579,5 +727,5 @@ class GPEnsembleModel:
             self.trained = True
             print(len(self.x_samples[0]))
 
-        # self.x_measurements = [[] for i in range(6)]
-        # self.y_measurements = [[] for i in range(3)]
+        self.x_measurements = [[] for i in range(6)]
+        self.y_measurements = [[] for i in range(3)]

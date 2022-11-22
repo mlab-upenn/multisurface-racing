@@ -30,20 +30,20 @@ import time
 class MPCConfigGP:
     NXK: int = 7  # length of kinematic state vector: z = [x, y, vx, yaw angle, vy, yaw rate, steering angle]
     NU: int = 2  # length of input vector: u = = [acceleration, steering speed]
-    TK: int = 20  # finite time horizon length kinematic
+    TK: int = 15  # finite time horizon length kinematic
 
     Rk: list = field(
-        default_factory=lambda: np.diag([0.000000002, 2.0])
+        default_factory=lambda: np.diag([0.000000002, 3.0])
     )  # input cost matrix, penalty for inputs - [accel, steering_speed]
     Rdk: list = field(
-        default_factory=lambda: np.diag([0.000000003, 2.0])
+        default_factory=lambda: np.diag([0.000000003, 3.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([26.5, 26.5, 20.0, 20.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([26.5, 26.5, 18.0, 20.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # state error cost matrix, for the next (T) prediction time steps
     Qfk: list = field(
-        default_factory=lambda: np.diag([26.5, 26.5, 20.0, 20.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([26.5, 26.5, 18.0, 20.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # final state error matrix, penalty  for the final state constraints
     N_IND_SEARCH: int = 20  # Search index number
@@ -100,17 +100,20 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     # Choose program parameters
     map_name = 'DualLaneChange'  # SaoPaulo, rounded_rectangle, l_shape, DualLaneChange
-    use_dyn_friction = False
+    use_dyn_friction = True
     control_step = 100.0  # ms
     render_every = 1  # render graphics every n control steps
     constant_friction = 1.1
     constant_speed = True
     # datasets = ['dataset_lShape_0_5_100ms_v2', 'dataset_lShape_1_1_100ms_v2']
     datasets = ['dataset_DualLaneChange_0_5_100ms_v3',
-                'dataset_DualLaneChange_0_7_100ms_v2',
-                'dataset_DualLaneChange_1_1_100ms_v2']
+                # 'dataset_DualLaneChange_0_6_100ms_v2',
+                'dataset_DualLaneChange_0_6_100ms_v2',
+                'dataset_DualLaneChange_0_9_100ms_v2',
+                'dataset_DualLaneChange_1_1_100ms_v2'
+                ]
     N_HIST = 10
-    EPS = 0.0
+    EPS = 0.00001
     NUM_MODELS = len(datasets)
 
     # Load map config file
@@ -119,11 +122,15 @@ def main():  # after launching this you can run visualization.py to see the resu
     conf = Namespace(**conf_dict)
 
     if use_dyn_friction:
-        tpamap_name = './maps/DualLaneChange/friction_data/DualLaneChange_track_tpamap.csv'
+        # tpamap_name = './maps/DualLaneChange/friction_data/DualLaneChange_track_tpamap.csv'
+        tpamap_name = './maps/DualLaneChange/friction_data/DualLaneChange5z_track_tpamap.csv'
+        # tpamap_name = './maps/DualLaneChange/friction_data/DualLaneChange3zv2_track_tpamap.csv'
         # tpamap_name = './maps/l_shape/friction_data/l_shape_l720_track_tpamap.csv'
         # tpamap_name = './maps/SaoPaulo/friction_data/SaoPaulo_track_tpamap.csv'
         # tpamap_name = './maps/l_shape/friction_data/l_shape_friction_gen_input_tpamap.csv'
-        tpadata_name = './maps/DualLaneChange/friction_data/DualLaneChange_track_tpadata.json'
+        # tpadata_name = './maps/DualLaneChange/friction_data/DualLaneChange_track_tpadata.json'
+        tpadata_name = './maps/DualLaneChange/friction_data/DualLaneChange5z_track_tpadata.json'
+        # tpadata_name = './maps/DualLaneChange/friction_data/DualLaneChange3zv2_track_tpadata.json'
         # tpadata_name = './maps/l_shape/friction_data/l_shape_l720_track_tpadata.json'
         # tpadata_name = './maps/SaoPaulo/friction_data/SaoPaulo_track_tpadata.json'
         # tpadata_name = './maps/l_shape/friction_data/l_shape_friction_gen_input_tpadata.json'
@@ -154,6 +161,11 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     # init graphics
     draw = DrawDebug()
+
+    time_start = time.time()
+    time_end = time.time()
+    algorithm_runtime_measurements = []
+    mpc_solve_time_measurements = []
 
     def render_callback(env_renderer):
         # custom extra drawing function
@@ -283,12 +295,20 @@ def main():  # after launching this you can run visualization.py to see the resu
 
         # print(env.params['tire_p_dx1'])
 
+        time_end = time.time()
+
+        # print(f'Program time = {time_end - time_start}')
+        algorithm_runtime_measurements.append(time_end - time_start)
+        mpc_solve_time_measurements.append(planner_gp_mpc.solve_time)
+
         # Simulation step
         step_reward = 0.0
         for i in range(num_of_sim_steps):
             obs, rew, _, info = env.step(np.array([[u[1], u[0]]]))
             step_reward += rew
         laptime += step_reward
+
+        time_start = time.time()
 
         vx_transition = env.sim.agents[0].state[3] + np.random.randn(1)[0] * 0.0001 - vehicle_state[2]
         vy_transition = env.sim.agents[0].state[10] + np.random.randn(1)[0] * 0.0001 - vehicle_state[4]
@@ -337,8 +357,6 @@ def main():  # after launching this you can run visualization.py to see the resu
         log['true_yaw_rate'].append(env.sim.agents[0].state[5] - vehicle_state[5])
         log['tracking_error'].append(tracking_error)
         log['w'].append(planner_gp_mpc.model.w.tolist())
-        # log['w1'].append(float(planner_gp_mpc.model.w1))
-        # log['w2'].append(float(planner_gp_mpc.model.w2))
 
         # Rendering
         last_render += 1
@@ -356,6 +374,16 @@ def main():  # after launching this you can run visualization.py to see the resu
             done = 1
 
     print('Sim elapsed time:', laptime, 'Real elapsed time:', time.time() - start)
+
+    # Remove first measurement
+    algorithm_runtime_measurements.pop(0)
+    mpc_solve_time_measurements.pop(0)
+
+    print(f'Number of samples (algorithm): {len(algorithm_runtime_measurements)} '
+          f' Average algorithm run time {sum(algorithm_runtime_measurements)/len(algorithm_runtime_measurements)}')
+    print(f'Number of samples (mpc solve): {len(mpc_solve_time_measurements)}'
+          f' Average mpc solve time {sum(mpc_solve_time_measurements)/len(mpc_solve_time_measurements)}')
+
     with open('log01_eval', 'w') as f:
         json.dump(log, f)
 

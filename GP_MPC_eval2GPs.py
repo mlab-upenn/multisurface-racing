@@ -18,31 +18,32 @@ from datetime import datetime
 from pyglet.gl import GL_POINTS
 import pyglet
 import json
+import time
 
 SAVE_MODELS = False
 PRETRAINED = False
-PRETRAINED_NAMES = {'model1': ['gp1', 'gp1_likelihood'],
-                    'model2': ['gp2', 'gp2_likelihood']}
+PRETRAINED_NAMES = {'model1': ['gp107-10-2022_18:02:54', 'gp1_likelihood07-10-2022_18:02:54'],
+                    'model2': ['gp207-10-2022_18:02:54', 'gp2_likelihood07-10-2022_18:02:54']}
 
 
 @dataclass
 class MPCConfigGP:
     NXK: int = 7  # length of kinematic state vector: z = [x, y, vx, yaw angle, vy, yaw rate, steering angle]
     NU: int = 2  # length of input vector: u = = [acceleration, steering speed]
-    TK: int = 12  # finite time horizon length kinematic
+    TK: int = 20  # finite time horizon length kinematic
 
     Rk: list = field(
-        default_factory=lambda: np.diag([0.000005, 10.0])
+        default_factory=lambda: np.diag([0.000000002, 2.0])
     )  # input cost matrix, penalty for inputs - [accel, steering_speed]
     Rdk: list = field(
-        default_factory=lambda: np.diag([0.000001, 10.0])
+        default_factory=lambda: np.diag([0.000000003, 2.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 5.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([26.5, 26.5, 20.0, 20.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # state error cost matrix, for the next (T) prediction time steps
     Qfk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 5.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([26.5, 26.5, 20.0, 20.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # final state error matrix, penalty  for the final state constraints
     N_IND_SEARCH: int = 20  # Search index number
@@ -98,11 +99,15 @@ def main():  # after launching this you can run visualization.py to see the resu
     """
 
     # Choose program parameters
-    map_name = 'l_shape'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape
+    map_name = 'DualLaneChange'  # SaoPaulo, rounded_rectangle, l_shape, DualLaneChange
     use_dyn_friction = True
     control_step = 100.0  # ms
     render_every = 1  # render graphics every n control steps
+    constant_friction = 0.5
     constant_speed = True
+    NUM_MODELS = 2
+    N_HIST = 11
+    EPS = 0.0
 
     # Load map config file
     with open('configs/config_%s.yaml' % map_name) as file:
@@ -110,11 +115,16 @@ def main():  # after launching this you can run visualization.py to see the resu
     conf = Namespace(**conf_dict)
 
     if use_dyn_friction:
-        tpamap_name = './maps/l_shape/friction_data/l_shape_friction_gen_input_tpamap.csv'
-        tpadata_name = './maps/l_shape/friction_data/l_shape_friction_gen_input_tpadata.json'
+        tpamap_name = './maps/DualLaneChange/friction_data/DualLaneChange_track_tpamap.csv'
+        # tpamap_name = './maps/l_shape/friction_data/l_shape_l720_track_tpamap.csv'
+        # tpamap_name = './maps/SaoPaulo/friction_data/SaoPaulo_track_tpamap.csv'
+        # tpamap_name = './maps/l_shape/friction_data/l_shape_friction_gen_input_tpamap.csv'
+        tpadata_name = './maps/DualLaneChange/friction_data/DualLaneChange_track_tpadata.json'
+        # tpadata_name = './maps/l_shape/friction_data/l_shape_l720_track_tpadata.json'
+        # tpadata_name = './maps/SaoPaulo/friction_data/SaoPaulo_track_tpadata.json'
+        # tpadata_name = './maps/l_shape/friction_data/l_shape_friction_gen_input_tpadata.json'
 
         tpamap = np.loadtxt(tpamap_name, delimiter=';', skiprows=1)
-        tpamap *= 1.0  # map is 1.5 times larger than normal
 
         tpadata = {}
         with open(tpadata_name) as f:
@@ -123,12 +133,13 @@ def main():  # after launching this you can run visualization.py to see the resu
     raceline = np.loadtxt(conf.wpt_path, delimiter=";", skiprows=3)
     waypoints = np.array(raceline)
 
+    waypoints[:, 3] += 1.5707963268
+
     if constant_speed:
-        # waypoints[:, 5] = waypoints[:, 5] * 2.0
-        if map_name == 'rounded_rectangle':
-            waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 7.5
-        if map_name == 'l_shape':
-            waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 7.5
+        waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 15.0
+    else:
+        waypoints[:, 5] *= 0.985
+        waypoints[waypoints[:, 5] > 19.5, 5] = 19.5
 
     # init controllers
     planner_pp = PurePursuitPlanner(conf, 0.805975 + 1.50876)  # 0.805975 + 1.50876
@@ -168,8 +179,9 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     env.add_render_callback(render_callback)
     # init vector = [x,y,yaw,steering angle, velocity, yaw_rate, beta]
+    spawn_point = 0
     obs, step_reward, done, info = env.reset(
-        np.array([[waypoints[0, 1], waypoints[0, 2], waypoints[0, 3], 0.0, waypoints[0, 5], 0.0, 0.0]]))
+        np.array([[waypoints[spawn_point, 1], waypoints[spawn_point, 2], waypoints[spawn_point, 3], 0.0, waypoints[spawn_point, 5], 0.0, 0.0]]))
     env.render()
 
     laptime = 0.0
@@ -177,15 +189,16 @@ def main():  # after launching this you can run visualization.py to see the resu
     last_render = 0
 
     # init logger
-    log = {'time': [], 'x': [], 'y': [], 'lap_n': [], 'vx': [], 'v_ref': [], 'vx_mean': [], 'vx_var': [], 'vy_mean': [],
-           'vy_var': [], 'theta_mean': [], 'theta_var': [], 'true_vx': [], 'true_vy': [], 'true_yaw_rate': [], 'tracking_error': [], 'w1': [], 'w2': []}
+    log = {'time': [], 'x': [], 'y': [], 'x_gt': [], 'y_gt': [], 'lap_n': [], 'vx': [], 'v_ref': [], 'vx_mean': [], 'vx_var': [], 'vy_mean': [],
+           'vy_var': [], 'theta_mean': [], 'theta_var': [], 'true_vx': [], 'true_mu': [], 'true_vy': [], 'true_yaw_rate': [], 'tracking_error': [], 'w1': [], 'w2': []}
 
     log_dataset = {'X0': [], 'X1': [], 'X2': [], 'X3': [], 'X4': [], 'X5': [], 'Y0': [], 'Y1': [], 'Y2': []}
 
     # calc number of sim steps per one control step
     num_of_sim_steps = int(control_step / (env.timestep * 1000.0))
 
-    with open('dataset_0_5', 'r') as f:
+    with open('dataset_DualLaneChange_0_5_100ms_v3', 'r') as f:
+    # with open('dataset_lShape_0_5_100ms_v2', 'r') as f:
         data = json.load(f)
 
     planner_gp_mpc.model.gp_model1.x_measurements[0] = data['X0']
@@ -200,7 +213,8 @@ def main():  # after launching this you can run visualization.py to see the resu
     print(len(planner_gp_mpc.model.gp_model1.x_measurements[0]))
     scaled_x1, scaled_y1 = planner_gp_mpc.model.gp_model1.init_gp()
 
-    with open('dataset_1_1', 'r') as f:
+    with open('dataset_DualLaneChange_1_1_100ms_v2', 'r') as f:
+    # with open('dataset_lShape_1_1_100ms_v2', 'r') as f:
         data = json.load(f)
 
     planner_gp_mpc.model.gp_model2.x_measurements[0] = data['X0']
@@ -235,7 +249,7 @@ def main():  # after launching this you can run visualization.py to see the resu
         if SAVE_MODELS:
             now = datetime.now()
             # dd/mm/YY H:M:S
-            dt_string = now.strftime("%d/%m/%Y-%H:%M:%S")
+            dt_string = now.strftime("%d-%m-%Y_%H:%M:%S")
 
             torch.save(planner_gp_mpc.model.gp_model1.gp_model.state_dict(), 'gp1' + dt_string + '.pth')
             torch.save(planner_gp_mpc.model.gp_model1.gp_likelihood.state_dict(), 'gp1_likelihood' + dt_string + '.pth')
@@ -273,8 +287,10 @@ def main():  # after launching this you can run visualization.py to see the resu
         gp_models_trained = 1
 
     gather_data = 0
-    prev_mean1 = None
-    prev_mean2 = None
+
+    prev_means = np.zeros((N_HIST, 3, NUM_MODELS))
+    prev_observations = np.zeros((N_HIST, 3))
+    prev_w = np.ones((NUM_MODELS, 1)) / NUM_MODELS
     while not done:
         # Regulator step MPC
         vehicle_state = np.array([env.sim.agents[0].state[0],
@@ -290,32 +306,41 @@ def main():  # after launching this you can run visualization.py to see the resu
         u = [0.0, 0.0]
         tracking_error = 0.0
         total_var = 0.0
+        n_point = 0
+
         # if not gp_models_trained:
         if gp_models_trained:
+            start = time.time()
             u, mpc_ref_path_x, mpc_ref_path_y, mpc_pred_x, mpc_pred_y, mpc_ox, mpc_oy = planner_gp_mpc.plan(vehicle_state)
+            end = time.time()
+            print(end-start)
             u[0] = u[0] / planner_gp_mpc.config.MASS  # Force to acceleration
 
             # draw predicted states and reference trajectory
             draw.reference_traj_show = np.array([mpc_ref_path_x, mpc_ref_path_y]).T
             draw.predicted_traj_show = np.array([mpc_pred_x, mpc_pred_y]).T
 
-            _, tracking_error, _, _, _ = nearest_point_on_trajectory(np.array([mpc_pred_x[0], mpc_pred_y[0]]),
-                                                                     np.array([mpc_ref_path_x[0:2], mpc_ref_path_y[0:2]]).T)
+            _, tracking_error, _, _, n_point = nearest_point_on_trajectory(np.array([env.sim.agents[0].state[0], env.sim.agents[0].state[1]]),
+                                                                     np.array([waypoints[:, 1], waypoints[:, 2]]).T)
         if gp_models_trained:
             with torch.no_grad(), gpytorch.settings.fast_pred_var():
                 mean, lower, upper, prev_mean1, prev_mean2 = planner_gp_mpc.model.scale_and_predict_model_step(vehicle_state,
                                                                                                                [u[0] * planner_gp_mpc.config.MASS, u[1]])
 
+        # print('ax = %f  delta-v = %f' % (u[0], u[1]))
+
         # set correct friction to the environment
         if use_dyn_friction:
             min_id = get_closest_point_vectorized(np.array([obs['poses_x'][0], obs['poses_y'][0]]), np.array(tpamap))
-            env.params['tire_p_dy1'] = tpadata[str(min_id)][0]  # mu_y
-            env.params['tire_p_dx1'] = tpadata[str(min_id)][0] * 1.1  # mu_x
+            # env.params['tire_p_dy1'] = tpadata[str(min_id)][0] - 0.1  # mu_y
+            env.params['tire_p_dy1'] = tpadata[str(min_id)][0] * 0.9  # mu_y
+            env.params['tire_p_dx1'] = tpadata[str(min_id)][0]  # mu_x
         else:
-            env.params['tire_p_dy1'] = 0.58  # mu_y
-            env.params['tire_p_dx1'] = 0.62  # mu_x
+            env.params['tire_p_dy1'] = constant_friction * 0.9  # mu_y
+            # env.params['tire_p_dy1'] = constant_friction - 0.1  # mu_y
+            env.params['tire_p_dx1'] = constant_friction  # mu_x
 
-        print(env.params['tire_p_dy1'])
+        # print(env.params['tire_p_dx1'])
 
         # Simulation step
         step_reward = 0.0
@@ -329,16 +354,35 @@ def main():  # after launching this you can run visualization.py to see the resu
         yaw_rate_transition = env.sim.agents[0].state[5] + np.random.randn(1)[0] * 0.0001 - vehicle_state[5]
 
         Y_real = np.array([float(vx_transition), float(vy_transition), float(yaw_rate_transition)])
-        planner_gp_mpc.model.compute_w(Y_real, prev_mean1, prev_mean2, np.array([u[0] * planner_gp_mpc.config.MASS, u[1]]))
-        # print('W1: %f    W2: %f' % (planner_gp_mpc.model.w1, planner_gp_mpc.model.w2))
+
+        # Roll previous means and observations
+        prev_means = np.roll(prev_means, shift=1, axis=0)
+        prev_observations = np.roll(prev_observations, shift=1, axis=0)
+
+        # replace with new means
+        prev_means[-1, :, 0] = prev_mean1.flatten()
+        prev_means[-1, :, 1] = prev_mean2.flatten()
+
+        # replace with new observations
+        prev_observations[-1, :] = Y_real.flatten()
+
+        planner_gp_mpc.model.compute_w(prev_observations.reshape(-1, 1), prev_means.reshape(-1, NUM_MODELS),
+                                       prev_w, EPS,
+                                       np.array([u[0] * planner_gp_mpc.config.MASS, u[1]]))
+        prev_w = planner_gp_mpc.model.w_var.value
+        # print('W1: %f    W2: %f  Ref speed: %f  Speed: %f   Friction: %f' % (
+        #     planner_gp_mpc.model.w1, planner_gp_mpc.model.w2, waypoints[:, 5][n_point], env.sim.agents[0].state[3], env.params['tire_p_dx1']))
 
         # Logging
         log['time'].append(laptime)
         log['lap_n'].append(obs['lap_counts'][0])
         log['x'].append(env.sim.agents[0].state[0])
+        log['x_gt'].append(mpc_ref_path_x[0])
         log['y'].append(env.sim.agents[0].state[1])
+        log['y_gt'].append(mpc_ref_path_y[0])
+        log['true_mu'].append(env.params['tire_p_dx1'])
         log['vx'].append(env.sim.agents[0].state[3])
-        log['v_ref'].append(waypoints[:, 5][0])
+        log['v_ref'].append(waypoints[:, 5][n_point])
         log['vx_mean'].append(float(mean[0]))
         log['vx_var'].append(float(abs(mean[0] - lower[0])))
         log['vy_mean'].append(float(mean[1]))
@@ -364,7 +408,7 @@ def main():  # after launching this you can run visualization.py to see the resu
                 json.dump(log, f)
             print('Log saved...')
 
-        if obs['lap_counts'][0] == 30:
+        if obs['lap_counts'][0] == 30 or tracking_error > 10.0 or env.sim.agents[0].state[0] > 505:
             done = 1
 
     print('Sim elapsed time:', laptime, 'Real elapsed time:', time.time() - start)
