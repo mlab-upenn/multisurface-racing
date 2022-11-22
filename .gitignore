@@ -4,6 +4,8 @@ __pycache__/
 
 # C extensions
 *.so
+*.pth
+*.png
 
 # Distribution / packaging
 bin/
@@ -51,3 +53,8 @@ docs/_build/
 
 # Ignore vscode config folder
 .vscode/
+
+# Custom
+dataset*
+log*
+*test*
