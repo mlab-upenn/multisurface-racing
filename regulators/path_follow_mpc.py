@@ -387,12 +387,15 @@ class STMPCPlanner:
 
         if np.isnan(ref_control_input).any():
             ref_control_input = np.zeros((self.config.NU, self.config.TK))
+        else:
+            ref_control_input = self.input_o
 
-        # Call the Motion Prediction function: Predict the vehicle motion for x-steps
+            # Call the Motion Prediction function: Predict the vehicle motion for x-steps
 
-        if not np.any(np.isnan(self.states_output)):  # and False
+        if not np.any(np.isnan(self.states_output)) and False:
             state_prediction = self.model.predict_kin_from_dyn(self.states_output, x0)
-            input_prediction = np.zeros((self.config.NU, self.config.TK + 1))
+            # input_prediction = np.zeros((self.config.NU, self.config.TK))  # self.input_o
+            input_prediction = self.input_o  # self.input_o
         else:
             state_prediction, input_prediction = self.model.predict_motion(x0, ref_control_input, self.config.DTK)
 

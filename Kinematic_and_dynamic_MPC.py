@@ -23,7 +23,7 @@ import json
 class MPCConfigEXT:
     NXK: int = 7  # length of kinematic state vector: z = [x, y, vx, yaw angle, vy, yaw rate, steering angle]
     NU: int = 2  # length of input vector: u = = [acceleration, steering speed]
-    TK: int = 10  # finite time horizon length kinematic
+    TK: int = 100  # finite time horizon length kinematic
 
     Rk: list = field(
         default_factory=lambda: np.diag([0.000000001, 10.0])
@@ -32,11 +32,11 @@ class MPCConfigEXT:
         default_factory=lambda: np.diag([0.000000001, 10.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 10.5, 0.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([13.5, 13.5, 10.5, 15.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # state error cost matrix, for the next (T) prediction time steps
     Qfk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 10.5, 0.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([13.5, 13.5, 10.5, 15.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # final state error matrix, penalty  for the final state constraints
     N_IND_SEARCH: int = 20  # Search index number
@@ -110,11 +110,11 @@ class MPCConfigDYN:
         default_factory=lambda: np.diag([0.000000001, 10.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 0.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([5.5, 5.5, 5.5, 0.0, 0.0, 0.0, 0.0])*1/20
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # state error cost matrix, for the next (T) prediction time steps
     Qfk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 0.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([5.5, 5.5, 5.5, 0.0, 0.0, 0.0, 0.0])*1/20
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # final state error matrix, penalty  for the final state constraints
     N_IND_SEARCH: int = 20  # Search index number
@@ -186,15 +186,15 @@ def main():  # after launching this you can run visualization.py to see the resu
     """
 
     # Choose program parameters
-    model_to_use = 'dynamic'  # options: ext_kinematic, pure_pursuit, kinematic, dynamic
+    model_to_use = 'dynamic'  # options: ext_kinematic, pure_pursuit, dynamic
     map_name = 'l_shape'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange
     rotate_map = True  # !!!! If the car is spawning with bad orientation change value here !!!! TODO Fix here so this is not needed anymore
     use_dyn_friction = False
-    constant_friction = 0.5
-    control_step = 30.0  # ms
+    constant_friction = 1.1
+    control_step = 20.0  # ms
     render_every = 40  # render graphics every n simulation steps
     constant_speed = True
-    constant_speed_value = 8.0
+    constant_speed_value = 12.0
     velocity_profile_multiplier = 0.9
     number_of_laps = 5
 
@@ -377,7 +377,7 @@ def main():  # after launching this you can run visualization.py to see the resu
             env.params['tire_p_dx1'] = constant_friction  # mu_x
 
         # print(env.params['tire_p_dx1'])
-        # print("%f   %f" % (waypoints[:, 5][n_point], env.sim.agents[0].state[3]))
+        print("%f   %f" % (waypoints[:, 5][n_point], env.sim.agents[0].state[3]))
 
         # Simulation step
         step_reward = 0.0

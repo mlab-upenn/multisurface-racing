@@ -191,7 +191,7 @@ class DynamicBicycleModel:
             state = state + self.get_f(state, control_input[:, i - 1]) * dt
             state = self.clip_output(state)
             predicted_states[:, i] = state
-        input_prediction = np.zeros((2, self.config.TK + 1))
+        input_prediction = control_input
         return predicted_states, input_prediction
 
     def predict_kin_from_dyn(self, states, x0):
