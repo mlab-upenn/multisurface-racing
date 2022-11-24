@@ -101,7 +101,7 @@ class MPCConfigKIN:
 class MPCConfigDYN:
     NXK: int = 7  # length of kinematic state vector: z = [x, y, vx, yaw angle, vy, yaw rate, steering angle]
     NU: int = 2  # length of input vector: u = = [acceleration, steering speed]
-    TK: int = 50  # finite time horizon length kinematic
+    TK: int = 20  # finite time horizon length kinematic
 
     Rk: list = field(
         default_factory=lambda: np.diag([0.00000001, 10.0])
@@ -187,18 +187,19 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     # Choose program parameters
     model_to_use = 'dynamic'  # options: ext_kinematic, pure_pursuit, dynamic
-    map_name = 'Oschersleben'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange, Austin, Budapest, Catalunya
-    # Hockenheim, IMS, Melbourne, MexicoCity, Montreal, Monza, MoscowRaceway, Oschersleben
+    map_name = 'Sepang'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange, Austin, Budapest, Catalunya
+    # Hockenheim, IMS, Melbourne, MexicoCity, Montreal, Monza, MoscowRaceway, Oschersleben, Sakhir, Sepang, Silverstone, Sochi, Spa, Spielberg
+    # YasMarina
     rotate_map = True  # !!!! If the car is spawning with bad orientation change value here !!!! TODO Fix here so this is not needed anymore
     use_dyn_friction = False
     constant_friction = 1.1
-    control_step = 20.0  # ms
+    control_step = 50.0  # ms
     render_every = 40  # render graphics every n simulation steps
     constant_speed = False
     constant_speed_value = 8.0
-    velocity_profile_multiplier = 0.9
+    velocity_profile_multiplier = 1.0
     number_of_laps = 5
-    start_point = 0  # index on the trajectory to start from
+    start_point = 250  # index on the trajectory to start from
 
     ekin_config = MPCConfigEXT()
     kin_config = MPCConfigKIN()
@@ -277,11 +278,11 @@ def main():  # after launching this you can run visualization.py to see the resu
         y = e.cars[0].vertices[1::2]
         top, bottom, left, right = max(y), min(y), min(x), max(x)
         e.score_label.x = left
-        e.score_label.y = top - 700 * 1.3
-        e.left = left - 800 * 1.3
-        e.right = right + 800 * 1.3
-        e.top = top + 800 * 1.3
-        e.bottom = bottom - 800 * 1.3
+        e.score_label.y = top - 7000
+        e.left = left - 3000
+        e.right = right + 3000
+        e.top = top + 3000
+        e.bottom = bottom - 3000
 
         planner_pp.render_waypoints(e)
         draw.draw_debug(e)
@@ -296,7 +297,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     env.add_render_callback(render_callback)
     # init vector = [x,y,yaw,steering angle, velocity, yaw_rate, beta]
     obs, step_reward, done, info = env.reset(
-        np.array([[waypoints[start_point, 1], waypoints[start_point, 2], waypoints[start_point, 3], 0.0, waypoints[start_point, 5], 0.0, 0.0]]))
+        np.array([[waypoints[start_point, 1], waypoints[start_point, 2], waypoints[start_point, 3], 0.0, 0.0, 0.0, 0.0]]))
     env.render()
 
     laptime = 0.0
@@ -361,8 +362,13 @@ def main():  # after launching this you can run visualization.py to see the resu
             draw.reference_traj_show = np.array([mpc_ref_path_x, mpc_ref_path_y]).T
             draw.predicted_traj_show = np.array([mpc_pred_x, mpc_pred_y]).T
         elif model_to_use == "dynamic":
-            u, mpc_ref_path_x, mpc_ref_path_y, mpc_pred_x, mpc_pred_y, mpc_ox, mpc_oy = planner_dyn_mpc.plan(
-                vehicle_state)
+            if vehicle_state[2] < 0.1:
+                u, mpc_ref_path_x, mpc_ref_path_y, mpc_pred_x, mpc_pred_y, mpc_ox, mpc_oy = planner_ekin_mpc.plan(
+                    vehicle_state)
+            else:
+                u, mpc_ref_path_x, mpc_ref_path_y, mpc_pred_x, mpc_pred_y, mpc_ox, mpc_oy = planner_dyn_mpc.plan(
+                    vehicle_state)
+
             u[0] = u[0] / planner_ekin_mpc.config.MASS  # Force to acceleration
 
             # draw predicted states and reference trajectory

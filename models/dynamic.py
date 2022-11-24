@@ -1,6 +1,7 @@
 import numpy as np
 from torch.autograd.functional import jacobian
 import torch
+from scipy import integrate
 
 
 class DynamicBicycleModel:
@@ -51,6 +52,10 @@ class DynamicBicycleModel:
             np.zeros(len(speed_ref))
         ])
         return reference
+
+    def reference_global_to_local(self, reference, x0):
+        # TODO change reference frame for kinematics from Global to Local ->>  x0 -> [0.0, 0.0, -, 0.0, -, -, -]
+        pass
 
     @staticmethod
     def get_general_states(state):
@@ -184,17 +189,30 @@ class DynamicBicycleModel:
         return list(A), list(B), np.array(C_block)
 
     def predict_motion(self, x0, control_input, dt):
+        # TODO change reference frame for kinematics from Global to Local ->>  x0 -> [0.0, 0.0, -, 0.0, -, -, -]
+        def get_f_wraper(x, t, u):
+            return self.get_f(x, u)
+
         predicted_states = np.zeros((self.config.NXK, self.config.TK + 1))
         predicted_states[:, 0] = x0
         state = x0
         for i in range(1, self.config.TK + 1):
-            state = state + self.get_f(state, control_input[:, i - 1]) * dt
+            x_left = integrate.odeint(get_f_wraper, state,
+                                      np.array([0.0, dt]),
+                                      args=(control_input[:, i - 1],),
+                                      mxstep=10000, full_output=1)
+            state = x_left[0][1]
+
+            # state = state + self.get_f(state, control_input[:, i - 1]) * dt
+
             state = self.clip_output(state)
             predicted_states[:, i] = state
         input_prediction = control_input
         return predicted_states, input_prediction
 
     def predict_kin_from_dyn(self, states, x0):
+
+        # TODO change reference frame for kinematics from Global to Local ->>  x0 -> [0.0, 0.0, -, 0.0, -, -, -]
         # states - [x, y, vx, yaw angle, vy, yaw rate, steering angle]
         states[:, 0][0] = x0[0]  # x
         states[:, 0][1] = x0[1]  # y
