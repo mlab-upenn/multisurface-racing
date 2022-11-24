@@ -187,8 +187,8 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     # Choose program parameters
     model_to_use = 'dynamic'  # options: ext_kinematic, pure_pursuit, dynamic
-    map_name = 'MoscowRaceway'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange, Austin, Budapest, Catalunya
-    # Hockenheim, IMS, Melbourne, MexicoCity, Montreal, Monza, MoscowRaceway
+    map_name = 'Oschersleben'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange, Austin, Budapest, Catalunya
+    # Hockenheim, IMS, Melbourne, MexicoCity, Montreal, Monza, MoscowRaceway, Oschersleben
     rotate_map = True  # !!!! If the car is spawning with bad orientation change value here !!!! TODO Fix here so this is not needed anymore
     use_dyn_friction = False
     constant_friction = 1.1
