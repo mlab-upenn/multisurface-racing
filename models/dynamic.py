@@ -140,6 +140,31 @@ class DynamicBicycleModel:
 
         return f
 
+    def get_model_matrix_cf(self, state, control_input):
+
+        # control inputs
+        Fxr, delta_v = control_input
+
+        # states x[k]
+        x, y, vx, yaw, vy, yaw_rate, steering_angle = state
+
+        A = np.array([[0, 0, np.cos(yaw), -vx*np.sin(yaw) - vy*np.cos(yaw), -np.sin(yaw), 0, 0],
+                    [0, 0, np.sin(yaw), vx*np.cos(yaw) - vy*np.sin(yaw), np.cos(yaw), 0, 0],
+                    [0, 0, 1.0*(-2.0*vx**1.0*CR2*(1.0 - TORQUE_SPLIT) - 2.0*vx**1.0*CR2*np.cos(steering_angle)*TORQUE_SPLIT - DF*CF*BF*np.sin(steering_angle)*(vy + LF*yaw_rate)*np.cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx**2*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/MASS, 0, 1.0*(MASS*yaw_rate + DF*CF*BF*sin(steering_angle)*np.cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/MASS, 1.0*(vy*MASS + LF*DF*CF*BF*sin(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/MASS, 1.0*(-DF*cos(steering_angle)*sin(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx)))) - sin(steering_angle)*(-CR0 + CM*Fxr - vx**2.0*CR2)*TORQUE_SPLIT - DF*CF*BF*sin(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2))/MASS],
+                    [0, 0, 0, 0, 0, 1, 0],
+                    [0, 0, 1.0*(-MASS*yaw_rate - 2.0*vx**1.0*CR2*sin(steering_angle)*TORQUE_SPLIT - DR*CR*BR*(-vy + LR*yaw_rate)*cos(CR*np.arctan(BR*np.arctan((-vy + LR*yaw_rate)/vx)))/(vx**2*(1 + (-vy + LR*yaw_rate)**2/vx**2)*(1 + BR**2*np.arctan((-vy + LR*yaw_rate)/vx)**2)) + DF*CF*BF*cos(steering_angle)*(vy + LF*yaw_rate)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx**2*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/MASS, 0, 1.0*(-DR*CR*BR*cos(CR*np.arctan(BR*np.arctan((-vy + LR*yaw_rate)/vx)))/(vx*(1 + (-vy + LR*yaw_rate)**2/vx**2)*(1 + BR**2*np.arctan((-vy + LR*yaw_rate)/vx)**2)) - DF*CF*BF*cos(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/MASS, 1.0*(-vx*MASS + LR*DR*CR*BR*cos(CR*np.arctan(BR*np.arctan((-vy + LR*yaw_rate)/vx)))/(vx*(1 + (-vy + LR*yaw_rate)**2/vx**2)*(1 + BR**2*np.arctan((-vy + LR*yaw_rate)/vx)**2)) - LF*DF*CF*BF*cos(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/MASS, 1.0*(-DF*sin(steering_angle)*sin(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx)))) + cos(steering_angle)*(-CR0 + CM*Fxr - vx**2.0*CR2)*TORQUE_SPLIT + DF*CF*BF*cos(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2))/MASS],
+                    [0, 0, 1.0*(LR*DR*CR*BR*(-vy + LR*yaw_rate)*cos(CR*np.arctan(BR*np.arctan((-vy + LR*yaw_rate)/vx)))/(vx**2*(1 + (-vy + LR*yaw_rate)**2/vx**2)*(1 + BR**2*np.arctan((-vy + LR*yaw_rate)/vx)**2)) + LF*DF*CF*BF*cos(steering_angle)*(vy + LF*yaw_rate)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx**2*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/I_Z, 0, 1.0*(LR*DR*CR*BR*cos(CR*np.arctan(BR*np.arctan((-vy + LR*yaw_rate)/vx)))/(vx*(1 + (-vy + LR*yaw_rate)**2/vx**2)*(1 + BR**2*np.arctan((-vy + LR*yaw_rate)/vx)**2)) - LF*DF*CF*BF*cos(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/I_Z, 1.0*(-LR**2*DR*CR*BR*cos(CR*np.arctan(BR*np.arctan((-vy + LR*yaw_rate)/vx)))/(vx*(1 + (-vy + LR*yaw_rate)**2/vx**2)*(1 + BR**2*np.arctan((-vy + LR*yaw_rate)/vx)**2)) - LF**2*DF*CF*BF*cos(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/I_Z, 1.0*(-LF*DF*sin(steering_angle)*sin(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx)))) + LF*DF*CF*BF*cos(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2))/I_Z],
+                    [0, 0, 0, 0, 0, 0, 0]])
+
+        B = np.array([[0, 0],
+                    [0, 0],
+                    [1.0*(CM*(1.0 - TORQUE_SPLIT) + CM*cos(steering_angle)*TORQUE_SPLIT)/MASS, 0],
+                    [0, 0],
+                    [1.0*CM*sin(steering_angle)*TORQUE_SPLIT/MASS, 0],
+                    [0, 0],
+                    [0, 1]])
+
+
     def get_model_matrix(self, state, control_input):
         # x, y, vx, yaw, vy, yaw_rate, steering_angle = state
         # Fxr, delta_v = control_input
