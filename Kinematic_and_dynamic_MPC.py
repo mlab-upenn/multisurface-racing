@@ -104,17 +104,17 @@ class MPCConfigDYN:
     TK: int = 50  # finite time horizon length kinematic
 
     Rk: list = field(
-        default_factory=lambda: np.diag([0.000000001, 10.0])
+        default_factory=lambda: np.diag([0.00000001, 10.0])
     )  # input cost matrix, penalty for inputs - [accel, steering_speed]
     Rdk: list = field(
-        default_factory=lambda: np.diag([0.000000001, 10.0])
+        default_factory=lambda: np.diag([0.00000001, 15.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 0.5, 0.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([13.5, 13.5, 5.1, 0.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # state error cost matrix, for the next (T) prediction time steps
     Qfk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 0.5, 0.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([13.5, 13.5, 5.1, 0.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # final state error matrix, penalty  for the final state constraints
     N_IND_SEARCH: int = 20  # Search index number
@@ -130,21 +130,21 @@ class MPCConfigDYN:
     MAX_STEER_V: float = 3.2  # maximum steering speed [rad/s]
     MAX_SPEED: float = 45.0  # maximum speed [m/s]
     MIN_SPEED: float = 0.0  # minimum backward speed [m/s]
-    MAX_ACCEL: float = 0.5  # maximum acceleration [m/ss]
-    MAX_DECEL: float = -1.0  # maximum acceleration [m/ss]
+    MAX_ACCEL: float = 11.5  # maximum acceleration [m/ss]
+    MAX_DECEL: float = -45.0  # maximum acceleration [m/ss]
 
     # model parameters
     MASS: float = 1225.887  # Vehicle mass
     I_Z: float = 1560.3729  # Vehicle inertia
     TORQUE_SPLIT: float = 0.0  # Torque distribution
 
-    BR: float = 24.9504  # Pacejka tire model parameter B - rear tire
+    BR: float = 15.9504  # Pacejka tire model parameter B - rear tire
     CR: float = 1.3754  # Pacejka tire model parameter C - rear tire
-    DR: float = 3702.9280  # Pacejka tire model parameter D - rear tire
+    DR: float = 4500.9280  # Pacejka tire model parameter D - rear tire
 
     BF: float = 9.4246  # Pacejka tire model parameter B - front tire
     CF: float = 5.9139  # Pacejka tire model parameter C - front tire
-    DF: float = 3714.8218  # Pacejka tire model parameter D - front tire
+    DF: float = 4500.8218  # Pacejka tire model parameter D - front tire
 
     # https://arxiv.org/pdf/1905.05150.pdf - equation (7)
     CM: float = 0.9459
@@ -187,16 +187,18 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     # Choose program parameters
     model_to_use = 'dynamic'  # options: ext_kinematic, pure_pursuit, dynamic
-    map_name = 'DualLaneChange'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange
+    map_name = 'MoscowRaceway'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange, Austin, Budapest, Catalunya
+    # Hockenheim, IMS, Melbourne, MexicoCity, Montreal, Monza, MoscowRaceway
     rotate_map = True  # !!!! If the car is spawning with bad orientation change value here !!!! TODO Fix here so this is not needed anymore
     use_dyn_friction = False
     constant_friction = 1.1
     control_step = 20.0  # ms
     render_every = 40  # render graphics every n simulation steps
     constant_speed = False
-    constant_speed_value = 15.0
+    constant_speed_value = 8.0
     velocity_profile_multiplier = 0.9
     number_of_laps = 5
+    start_point = 0  # index on the trajectory to start from
 
     ekin_config = MPCConfigEXT()
     kin_config = MPCConfigKIN()
@@ -227,6 +229,9 @@ def main():  # after launching this you can run visualization.py to see the resu
         if map_name == 'SaoPaulo':
             tpamap_name = './maps/SaoPaulo/friction_data/SaoPaulo_track_tpamap.csv'
             tpadata_name = './maps/SaoPaulo/friction_data/SaoPaulo_track_tpadata.json'
+        if map_name == 'Nuerburgring':
+            tpamap_name = './maps/Nuerburgring/friction_data/Nuerburgring_tpamap.csv'
+            tpadata_name = './maps/Nuerburgring/friction_data/Nuerburgring_tpadata.json'
 
         tpamap = np.loadtxt(tpamap_name, delimiter=';', skiprows=1)
 
@@ -291,7 +296,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     env.add_render_callback(render_callback)
     # init vector = [x,y,yaw,steering angle, velocity, yaw_rate, beta]
     obs, step_reward, done, info = env.reset(
-        np.array([[waypoints[0, 1], waypoints[0, 2], waypoints[0, 3], 0.0, 0.0, 0.0, 0.0]]))
+        np.array([[waypoints[start_point, 1], waypoints[start_point, 2], waypoints[start_point, 3], 0.0, waypoints[start_point, 5], 0.0, 0.0]]))
     env.render()
 
     laptime = 0.0
