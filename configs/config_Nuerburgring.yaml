@@ -4,7 +4,6 @@ run_name: 'map_wide'
 perf_num: 6
 
 # map paths
-#map_path: './maps/Nuerburgring/Nuerburgring_map'
 map_path: './maps/Nuerburgring/Nuerburgring_map_empty'
 map_ext: '.png'
 
@@ -14,8 +13,7 @@ sy: -3.001
 stheta: -2.377
 
 # raceline path and indices
-#wpt_path: './maps/Nuerburgring/Nuerburgring_waypoints.csv'
-wpt_path: './maps/Nuerburgring/waypoints/Nuerburgring_raceline.csv'
+wpt_path: './maps/Nuerburgring/waypoints/traj_race_cl.csv'
 wpt_delim: ';'
 wpt_rowskip: 3
 wpt_xind: 1
