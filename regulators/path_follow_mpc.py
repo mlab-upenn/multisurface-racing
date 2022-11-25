@@ -206,27 +206,7 @@ class STMPCPlanner:
 
         # speeds_ref = np.take(path[:, 5], range(ind, ind + self.config.TK), mode='wrap')  # method 3
         # speeds = (speeds_ref + speed) / 2.0
-
         reference = self.get_reference_trajectory(speeds, dist, ind, path)
-
-        # reference[3, :][reference[3, :] - orientation > 5] = np.abs(
-        #     reference[3, :][reference[3, :] - orientation > 5] - (2 * np.pi))
-        # reference[3, :][reference[3, :] - orientation < -5] = np.abs(
-        #     reference[3, :][reference[3, :] - orientation < -5] + (2 * np.pi))
-
-        # # correct reference speed
-        # if abs(reference[2][0] - speed) > 1.0:
-        #     reference[2][0] = speed
-        #     for i in range(1, self.config.TK):
-        #         acc = (reference[2][i] - reference[2][i-1]) / self.config.DTK
-        #         if acc > self.config.MAX_ACCEL:
-        #             acc = self.config.MAX_ACCEL
-        #         if acc < self.config.MAX_DECEL:
-        #             acc = self.config.MAX_DECEL
-        #         reference[2][i] = reference[2][i-1] + acc * self.config.DTK
-        # speeds = reference[2][:-1]
-        # Added double pass to fix the velocity
-        # reference = self.get_reference_trajectory(speeds, dist, ind, path)
 
         reference[3, :][reference[3, :] - orientation > 5] = np.abs(
             reference[3, :][reference[3, :] - orientation > 5] - (2 * np.pi))
@@ -234,16 +214,6 @@ class STMPCPlanner:
             reference[3, :][reference[3, :] - orientation < -5] + (2 * np.pi))
 
         reference[2] = np.where(reference[2] - speed > 5.0, speed + 5.0, reference[2])
-        # # correct reference speed
-        # if abs(reference[2][0] - speed) > 1.0:
-        #     reference[2][0] = speed
-        #     for i in range(1, self.config.TK):
-        #         acc = (reference[2][i] - reference[2][i-1]) / self.config.DTK
-        #         if acc > self.config.MAX_ACCEL:
-        #             acc = self.config.MAX_ACCEL
-        #         if acc < self.config.MAX_DECEL:
-        #             acc = self.config.MAX_DECEL
-        #         reference[2][i] = reference[2][i-1] + acc * self.config.DTK
 
         return reference, 0
 
@@ -376,7 +346,6 @@ class STMPCPlanner:
     def mpc_prob_solve(self, ref_traj, path_predict, x0, input_predict):
 
         self.x0k.value = x0
-
         A_batch, B_batch, C_batch = self.model.batch_get_model_matrix(path_predict[:, :self.config.TK], input_predict[:, :self.config.TK])
         A_block = block_diag(A_batch)
         B_block = block_diag(B_batch)
@@ -388,14 +357,14 @@ class STMPCPlanner:
 
         self.ref_traj_k.value = ref_traj
 
-        time_start = time.time()
+        # time_start = time.time()
         # Solve the optimization problem in CVXPY
         # Solver selections: cvxpy.OSQP; cvxpy.GUROBI
         # self.MPC_prob.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
         self.MPC_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.01, eps_abs=0.0005, eps_rel=0.0005, verbose=False, warm_start=True)
-        time_end = time.time()
+        # time_end = time.time()
         # print(f'Solving time = {time_end - time_start}')
-        self.solve_time = time_end - time_start
+        # self.solve_time = time_end - time_start
 
         if self.MPC_prob.status == cvxpy.OPTIMAL or self.MPC_prob.status == cvxpy.OPTIMAL_INACCURATE:
             o_states = self.xk.value

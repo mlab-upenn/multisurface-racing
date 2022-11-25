@@ -492,13 +492,13 @@ class DynamicBicycleModel:
         predicted_states[:, 0] = x0
         state = x0
         for i in range(1, self.config.TK + 1):
-            x_left = integrate.odeint(get_f_wraper, state,
-                                      np.array([0.0, dt]),
-                                      args=(control_input[:, i - 1],),
-                                      mxstep=10000, full_output=1)
-            state = x_left[0][1]
+            # x_left = integrate.odeint(get_f_wraper, state,
+            #                           np.array([0.0, dt]),
+            #                           args=(control_input[:, i - 1],),
+            #                           mxstep=10000, full_output=1)
+            # state = x_left[0][1]
 
-            # state = state + self.get_f(state, control_input[:, i - 1]) * dt
+            state = state + self.get_f(state, control_input[:, i - 1]) * dt
 
             state = self.clip_output(state)
             predicted_states[:, i] = state

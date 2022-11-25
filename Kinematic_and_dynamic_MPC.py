@@ -310,10 +310,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     # calc number of sim steps per one control step
     num_of_sim_steps = int(control_step / (env.timestep * 1000.0))
 
-    print('Model used: %s' % model_to_use)
-
     while not done:
-
         # Regulator step MPC
         vehicle_state = np.array([env.sim.agents[0].state[0],  # x
                                   env.sim.agents[0].state[1],  # y
@@ -390,6 +387,7 @@ def main():  # after launching this you can run visualization.py to see the resu
         # print(env.params['tire_p_dx1'])
         print("%f   %f" % (waypoints[:, 5][n_point], env.sim.agents[0].state[3]))
 
+        print('Model used: %s' % model_to_use)
         # Simulation step
         step_reward = 0.0
         for i in range(num_of_sim_steps):
@@ -412,6 +410,8 @@ def main():  # after launching this you can run visualization.py to see the resu
         log['v_ref'].append(waypoints[:, 5][n_point])
         log['tracking_error'].append(tracking_error)
         log['lap_n'].append(obs['lap_counts'][0])
+
+
 
         if obs['lap_counts'][0] == number_of_laps:  # or env.sim.agents[0].state[3] < 0.4 or tracking_error > 10.0:
             done = 1
