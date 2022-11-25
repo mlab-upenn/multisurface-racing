@@ -23,7 +23,7 @@ import json
 class MPCConfigEXT:
     NXK: int = 7  # length of kinematic state vector: z = [x, y, vx, yaw angle, vy, yaw rate, steering angle]
     NU: int = 2  # length of input vector: u = = [acceleration, steering speed]
-    TK: int = 100  # finite time horizon length kinematic
+    TK: int = 20  # finite time horizon length kinematic
 
     Rk: list = field(
         default_factory=lambda: np.diag([0.000000001, 10.0])
@@ -110,11 +110,11 @@ class MPCConfigDYN:
         default_factory=lambda: np.diag([0.00000001, 15.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 5.1, 0.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 0.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # state error cost matrix, for the next (T) prediction time steps
     Qfk: list = field(
-        default_factory=lambda: np.diag([13.5, 13.5, 5.1, 0.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([13.5, 13.5, 5.5, 0.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # final state error matrix, penalty  for the final state constraints
     N_IND_SEARCH: int = 20  # Search index number
@@ -197,7 +197,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     render_every = 40  # render graphics every n simulation steps
     constant_speed = False
     constant_speed_value = 8.0
-    velocity_profile_multiplier = 1.0
+    velocity_profile_multiplier = 0.9
     number_of_laps = 5
     start_point = 250  # index on the trajectory to start from
 
