@@ -233,7 +233,7 @@ class STMPCPlanner:
         reference[3, :][reference[3, :] - orientation < -5] = np.abs(
             reference[3, :][reference[3, :] - orientation < -5] + (2 * np.pi))
 
-        reference[2] = np.where(reference[2] - speed > 12.0, speed + 12.0, reference[2])
+        reference[2] = np.where(reference[2] - speed > 5.0, speed + 5.0, reference[2])
         # # correct reference speed
         # if abs(reference[2][0] - speed) > 1.0:
         #     reference[2][0] = speed

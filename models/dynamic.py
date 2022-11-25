@@ -2,6 +2,7 @@ import numpy as np
 from torch.autograd.functional import jacobian
 import torch
 from scipy import integrate
+import time
 
 
 class DynamicBicycleModel:
@@ -132,9 +133,11 @@ class DynamicBicycleModel:
         f = torch.zeros(state.shape)
         f[:, 0] = vx * torch.cos(yaw) - vy * torch.sin(yaw)
         f[:, 1] = vx * torch.sin(yaw) + vy * torch.cos(yaw)
-        f[:, 2] = 1.0 / self.config.MASS * (Frx - Ffy * torch.sin(steering_angle) + Ffx * torch.cos(steering_angle) + vy * yaw_rate * self.config.MASS)
+        f[:, 2] = 1.0 / self.config.MASS * (
+                    Frx - Ffy * torch.sin(steering_angle) + Ffx * torch.cos(steering_angle) + vy * yaw_rate * self.config.MASS)
         f[:, 3] = yaw_rate
-        f[:, 4] = 1.0 / self.config.MASS * (Fry + Ffy * torch.cos(steering_angle) + Ffx * torch.sin(steering_angle) - vx * yaw_rate * self.config.MASS)
+        f[:, 4] = 1.0 / self.config.MASS * (
+                    Fry + Ffy * torch.cos(steering_angle) + Ffx * torch.sin(steering_angle) - vx * yaw_rate * self.config.MASS)
         f[:, 5] = 1.0 / self.config.I_Z * (Ffy * self.config.LF * torch.cos(steering_angle) - Fry * self.config.LR)
         f[:, 6] = delta_v
 
@@ -148,22 +151,112 @@ class DynamicBicycleModel:
         # states x[k]
         x, y, vx, yaw, vy, yaw_rate, steering_angle = state
 
-        A = np.array([[0, 0, np.cos(yaw), -vx*np.sin(yaw) - vy*np.cos(yaw), -np.sin(yaw), 0, 0],
-                    [0, 0, np.sin(yaw), vx*np.cos(yaw) - vy*np.sin(yaw), np.cos(yaw), 0, 0],
-                    [0, 0, 1.0*(-2.0*vx**1.0*CR2*(1.0 - TORQUE_SPLIT) - 2.0*vx**1.0*CR2*np.cos(steering_angle)*TORQUE_SPLIT - DF*CF*BF*np.sin(steering_angle)*(vy + LF*yaw_rate)*np.cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx**2*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/MASS, 0, 1.0*(MASS*yaw_rate + DF*CF*BF*sin(steering_angle)*np.cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/MASS, 1.0*(vy*MASS + LF*DF*CF*BF*sin(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/MASS, 1.0*(-DF*cos(steering_angle)*sin(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx)))) - sin(steering_angle)*(-CR0 + CM*Fxr - vx**2.0*CR2)*TORQUE_SPLIT - DF*CF*BF*sin(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2))/MASS],
-                    [0, 0, 0, 0, 0, 1, 0],
-                    [0, 0, 1.0*(-MASS*yaw_rate - 2.0*vx**1.0*CR2*sin(steering_angle)*TORQUE_SPLIT - DR*CR*BR*(-vy + LR*yaw_rate)*cos(CR*np.arctan(BR*np.arctan((-vy + LR*yaw_rate)/vx)))/(vx**2*(1 + (-vy + LR*yaw_rate)**2/vx**2)*(1 + BR**2*np.arctan((-vy + LR*yaw_rate)/vx)**2)) + DF*CF*BF*cos(steering_angle)*(vy + LF*yaw_rate)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx**2*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/MASS, 0, 1.0*(-DR*CR*BR*cos(CR*np.arctan(BR*np.arctan((-vy + LR*yaw_rate)/vx)))/(vx*(1 + (-vy + LR*yaw_rate)**2/vx**2)*(1 + BR**2*np.arctan((-vy + LR*yaw_rate)/vx)**2)) - DF*CF*BF*cos(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/MASS, 1.0*(-vx*MASS + LR*DR*CR*BR*cos(CR*np.arctan(BR*np.arctan((-vy + LR*yaw_rate)/vx)))/(vx*(1 + (-vy + LR*yaw_rate)**2/vx**2)*(1 + BR**2*np.arctan((-vy + LR*yaw_rate)/vx)**2)) - LF*DF*CF*BF*cos(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/MASS, 1.0*(-DF*sin(steering_angle)*sin(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx)))) + cos(steering_angle)*(-CR0 + CM*Fxr - vx**2.0*CR2)*TORQUE_SPLIT + DF*CF*BF*cos(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2))/MASS],
-                    [0, 0, 1.0*(LR*DR*CR*BR*(-vy + LR*yaw_rate)*cos(CR*np.arctan(BR*np.arctan((-vy + LR*yaw_rate)/vx)))/(vx**2*(1 + (-vy + LR*yaw_rate)**2/vx**2)*(1 + BR**2*np.arctan((-vy + LR*yaw_rate)/vx)**2)) + LF*DF*CF*BF*cos(steering_angle)*(vy + LF*yaw_rate)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx**2*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/I_Z, 0, 1.0*(LR*DR*CR*BR*cos(CR*np.arctan(BR*np.arctan((-vy + LR*yaw_rate)/vx)))/(vx*(1 + (-vy + LR*yaw_rate)**2/vx**2)*(1 + BR**2*np.arctan((-vy + LR*yaw_rate)/vx)**2)) - LF*DF*CF*BF*cos(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/I_Z, 1.0*(-LR**2*DR*CR*BR*cos(CR*np.arctan(BR*np.arctan((-vy + LR*yaw_rate)/vx)))/(vx*(1 + (-vy + LR*yaw_rate)**2/vx**2)*(1 + BR**2*np.arctan((-vy + LR*yaw_rate)/vx)**2)) - LF**2*DF*CF*BF*cos(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(vx*(1 + (vy + LF*yaw_rate)**2/vx**2)*(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2)))/I_Z, 1.0*(-LF*DF*sin(steering_angle)*sin(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx)))) + LF*DF*CF*BF*cos(steering_angle)*cos(CF*np.arctan(BF*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))))/(1 + BF**2*(steering_angle - np.arctan((vy + LF*yaw_rate)/vx))**2))/I_Z],
-                    [0, 0, 0, 0, 0, 0, 0]])
+        A = np.array([[0, 0, np.cos(yaw), -vx * np.sin(yaw) - vy * np.cos(yaw), -np.sin(yaw), 0, 0],
+                      [0, 0, np.sin(yaw), vx * np.cos(yaw) - vy * np.sin(yaw), np.cos(yaw), 0, 0],
+                      [0, 0, 1.0 * (
+                                  -2.0 * vx ** 1.0 * self.config.CR2 * (1.0 - self.config.TORQUE_SPLIT) - 2.0 * vx ** 1.0 * self.config.CR2 * np.cos(
+                              steering_angle) * self.config.TORQUE_SPLIT - self.config.DF * self.config.CF * self.config.BF * np.sin(
+                              steering_angle) * (vy + self.config.LF * yaw_rate) * np.cos(
+                              self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) / (
+                                              vx ** 2 * (1 + (vy + self.config.LF * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BF ** 2 * (
+                                                  steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)) ** 2))) / self.config.MASS, 0,
+                       1.0 * (self.config.MASS * yaw_rate + self.config.DF * self.config.CF * self.config.BF * np.sin(steering_angle) * np.cos(
+                           self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) / (
+                                          vx * (1 + (vy + self.config.LF * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BF ** 2 * (
+                                              steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)) ** 2))) / self.config.MASS, 1.0 * (
+                                   vy * self.config.MASS + self.config.LF * self.config.DF * self.config.CF * self.config.BF * np.sin(
+                               steering_angle) * np.cos(
+                               self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) / (
+                                               vx * (1 + (vy + self.config.LF * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BF ** 2 * (
+                                                   steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)) ** 2))) / self.config.MASS,
+                       1.0 * (-self.config.DF * np.cos(steering_angle) * np.sin(
+                           self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) - np.sin(
+                           steering_angle) * (
+                                          -self.config.CR0 + self.config.CM * Fxr - vx ** 2.0 * self.config.CR2) * self.config.TORQUE_SPLIT - self.config.DF * self.config.CF * self.config.BF * np.sin(
+                           steering_angle) * np.cos(
+                           self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) / (
+                                          1 + self.config.BF ** 2 * (
+                                              steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)) ** 2)) / self.config.MASS],
+                      [0, 0, 0, 0, 0, 1, 0],
+                      [0, 0, 1.0 * (-self.config.MASS * yaw_rate - 2.0 * vx ** 1.0 * self.config.CR2 * np.sin(
+                          steering_angle) * self.config.TORQUE_SPLIT - self.config.DR * self.config.CR * self.config.BR * (
+                                                -vy + self.config.LR * yaw_rate) * np.cos(
+                          self.config.CR * np.arctan(self.config.BR * np.arctan((-vy + self.config.LR * yaw_rate) / vx))) / (
+                                                vx ** 2 * (1 + (-vy + self.config.LR * yaw_rate) ** 2 / vx ** 2) * (
+                                                    1 + self.config.BR ** 2 * np.arctan((
+                                                                                                    -vy + self.config.LR * yaw_rate) / vx) ** 2)) + self.config.DF * self.config.CF * self.config.BF * np.cos(
+                          steering_angle) * (vy + self.config.LF * yaw_rate) * np.cos(
+                          self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) / (
+                                                vx ** 2 * (1 + (vy + self.config.LF * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BF ** 2 * (
+                                                    steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)) ** 2))) / self.config.MASS, 0,
+                       1.0 * (-self.config.DR * self.config.CR * self.config.BR * np.cos(
+                           self.config.CR * np.arctan(self.config.BR * np.arctan((-vy + self.config.LR * yaw_rate) / vx))) / (
+                                          vx * (1 + (-vy + self.config.LR * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BR ** 2 * np.arctan(
+                                      (-vy + self.config.LR * yaw_rate) / vx) ** 2)) - self.config.DF * self.config.CF * self.config.BF * np.cos(
+                           steering_angle) * np.cos(
+                           self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) / (
+                                          vx * (1 + (vy + self.config.LF * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BF ** 2 * (
+                                              steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)) ** 2))) / self.config.MASS, 1.0 * (
+                                   -vx * self.config.MASS + self.config.LR * self.config.DR * self.config.CR * self.config.BR * np.cos(
+                               self.config.CR * np.arctan(self.config.BR * np.arctan((-vy + self.config.LR * yaw_rate) / vx))) / (
+                                               vx * (1 + (-vy + self.config.LR * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BR ** 2 * np.arctan((
+                                                                                                                                                              -vy + self.config.LR * yaw_rate) / vx) ** 2)) - self.config.LF * self.config.DF * self.config.CF * self.config.BF * np.cos(
+                               steering_angle) * np.cos(
+                               self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) / (
+                                               vx * (1 + (vy + self.config.LF * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BF ** 2 * (
+                                                   steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)) ** 2))) / self.config.MASS,
+                       1.0 * (-self.config.DF * np.sin(steering_angle) * np.sin(
+                           self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) + np.cos(
+                           steering_angle) * (
+                                          -self.config.CR0 + self.config.CM * Fxr - vx ** 2.0 * self.config.CR2) * self.config.TORQUE_SPLIT + self.config.DF * self.config.CF * self.config.BF * np.cos(
+                           steering_angle) * np.cos(
+                           self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) / (
+                                          1 + self.config.BF ** 2 * (
+                                              steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)) ** 2)) / self.config.MASS],
+                      [0, 0, 1.0 * (self.config.LR * self.config.DR * self.config.CR * self.config.BR * (-vy + self.config.LR * yaw_rate) * np.cos(
+                          self.config.CR * np.arctan(self.config.BR * np.arctan((-vy + self.config.LR * yaw_rate) / vx))) / (
+                                                vx ** 2 * (1 + (-vy + self.config.LR * yaw_rate) ** 2 / vx ** 2) * (
+                                                    1 + self.config.BR ** 2 * np.arctan((
+                                                                                                    -vy + self.config.LR * yaw_rate) / vx) ** 2)) + self.config.LF * self.config.DF * self.config.CF * self.config.BF * np.cos(
+                          steering_angle) * (vy + self.config.LF * yaw_rate) * np.cos(
+                          self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) / (
+                                                vx ** 2 * (1 + (vy + self.config.LF * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BF ** 2 * (
+                                                    steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)) ** 2))) / self.config.I_Z, 0,
+                       1.0 * (self.config.LR * self.config.DR * self.config.CR * self.config.BR * np.cos(
+                           self.config.CR * np.arctan(self.config.BR * np.arctan((-vy + self.config.LR * yaw_rate) / vx))) / (
+                                          vx * (1 + (-vy + self.config.LR * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BR ** 2 * np.arctan((
+                                                                                                                                                         -vy + self.config.LR * yaw_rate) / vx) ** 2)) - self.config.LF * self.config.DF * self.config.CF * self.config.BF * np.cos(
+                           steering_angle) * np.cos(
+                           self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) / (
+                                          vx * (1 + (vy + self.config.LF * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BF ** 2 * (
+                                              steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)) ** 2))) / self.config.I_Z, 1.0 * (
+                                   -self.config.LR ** 2 * self.config.DR * self.config.CR * self.config.BR * np.cos(
+                               self.config.CR * np.arctan(self.config.BR * np.arctan((-vy + self.config.LR * yaw_rate) / vx))) / (
+                                               vx * (1 + (-vy + self.config.LR * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BR ** 2 * np.arctan((
+                                                                                                                                                              -vy + self.config.LR * yaw_rate) / vx) ** 2)) - self.config.LF ** 2 * self.config.DF * self.config.CF * self.config.BF * np.cos(
+                               steering_angle) * np.cos(
+                               self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) / (
+                                               vx * (1 + (vy + self.config.LF * yaw_rate) ** 2 / vx ** 2) * (1 + self.config.BF ** 2 * (
+                                                   steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)) ** 2))) / self.config.I_Z,
+                       1.0 * (-self.config.LF * self.config.DF * np.sin(steering_angle) * np.sin(self.config.CF * np.arctan(self.config.BF * (
+                                   steering_angle - np.arctan(
+                               (vy + self.config.LF * yaw_rate) / vx)))) + self.config.LF * self.config.DF * self.config.CF * self.config.BF * np.cos(
+                           steering_angle) * np.cos(
+                           self.config.CF * np.arctan(self.config.BF * (steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)))) / (
+                                          1 + self.config.BF ** 2 * (
+                                              steering_angle - np.arctan((vy + self.config.LF * yaw_rate) / vx)) ** 2)) / self.config.I_Z],
+                      [0, 0, 0, 0, 0, 0, 0]])
 
         B = np.array([[0, 0],
-                    [0, 0],
-                    [1.0*(CM*(1.0 - TORQUE_SPLIT) + CM*cos(steering_angle)*TORQUE_SPLIT)/MASS, 0],
-                    [0, 0],
-                    [1.0*CM*sin(steering_angle)*TORQUE_SPLIT/MASS, 0],
-                    [0, 0],
-                    [0, 1]])
+                      [0, 0],
+                      [1.0 * (self.config.CM * (1.0 - self.config.TORQUE_SPLIT) + self.config.CM * np.cos(
+                          steering_angle) * self.config.TORQUE_SPLIT) / self.config.MASS, 0],
+                      [0, 0],
+                      [1.0 * self.config.CM * np.sin(steering_angle) * self.config.TORQUE_SPLIT / self.config.MASS, 0],
+                      [0, 0],
+                      [0, 1]])
 
+        return A, B
 
     def get_model_matrix(self, state, control_input):
         # x, y, vx, yaw, vy, yaw_rate, steering_angle = state
@@ -179,26 +272,45 @@ class DynamicBicycleModel:
         # Input Matrix B; 7x2
         B = B_ * self.config.DTK
 
-        C = (np.nan_to_num(self.get_f(state, control_input).reshape(7, 1)) - A_ @ state.reshape(7, 1) - B_ @ control_input.reshape(2, 1)) * self.config.DTK
+        C = (np.nan_to_num(self.get_f(state, control_input).reshape(7, 1)) - A_ @ state.reshape(7, 1) - B_ @ control_input.reshape(2,
+                                                                                                                                   1)) * self.config.DTK
         C = C.reshape(7)
 
         return A, B, C
 
-    def batch_get_model_matrix(self, state_vec, control_vec):
+    def batch_get_model_matrix(self, state_vec, control_vec, use_autograd=True):
         C_block = []
 
         state_vec_ = np.moveaxis(state_vec, 0, 1)
         control_vec_ = np.moveaxis(control_vec, 0, 1)
 
-        def batch_jacobian(f, x):
-            f_sum = lambda x1, x2: torch.sum(f(x1, x2), axis=0)
-            return jacobian(f_sum, x)
+        if not use_autograd:
+            A_ = np.zeros((self.config.TK, self.config.NXK, self.config.NXK))
+            B_ = np.zeros((self.config.TK, self.config.NXK, self.config.NU))
 
-        A_, B_ = batch_jacobian(self.get_f_torch_batch, (torch.from_numpy(state_vec_), torch.from_numpy(control_vec_)))
-        A_ = np.nan_to_num(A_.numpy())
-        A_ = np.moveaxis(A_, 1, 0)
-        B_ = B_.numpy()
-        B_ = np.moveaxis(B_, 1, 0)
+            for t in range(self.config.TK):
+                A_t, B_t = self.get_model_matrix_cf(torch.from_numpy(state_vec)[:, t], torch.from_numpy(control_vec)[:, t])
+
+                A_[t, :, :] = A_t
+                B_[t, :, :] = B_t
+        else:
+            def batch_jacobian(f, x):
+                f_sum = lambda x1, x2: torch.sum(f(x1, x2), axis=0)
+                return jacobian(f_sum, x)
+
+            A_, B_ = batch_jacobian(self.get_f_torch_batch, (torch.from_numpy(state_vec_), torch.from_numpy(control_vec_)))
+            A_ = np.nan_to_num(A_.numpy())
+            A_ = np.moveaxis(A_, 1, 0)
+            B_ = B_.numpy()
+            B_ = np.moveaxis(B_, 1, 0)
+
+        # print("Are solutions from cl and autograd the same:")
+        # print(f"Matrix A: {np.all(np.isclose(A_, A_1))}")
+        # print(f"Matrix B: {np.all(np.isclose(B_, B_1))}")
+        # print("Timing:")
+        # print(f"Close form solution time: {end1 - start1}")
+        # print(f"Autograd solution time: {end2 - start2}")
+        # print("----------------------------")
 
         # State (or system) matrix A, 7x7
         A = np.repeat(np.diag(np.ones(7))[:, :, np.newaxis], state_vec_.shape[0], axis=2)
