@@ -33,6 +33,7 @@ import numpy as np
 from scipy.linalg import block_diag
 from scipy.sparse import block_diag, csc_matrix, diags
 from numba import njit
+import copy
 
 
 @njit(cache=True)
@@ -101,6 +102,18 @@ class STMPCPlanner:
         self.init_flag = 0
         self.mpc_prob_init()
         self.solve_time = time.time()
+
+        self.frenet = False
+
+        # safe set
+        self.SS = []  # safe set (states)
+        self.uSS = []  # safe set (inputs)
+        self.Qfinal_speed = []  # final cost approximation for speed
+        self.Qfinal_tracking = []  # final cost approximation
+        self.it = 0  # LMPC iteration
+
+        self.mpc_tracking_weight = 0
+        self.mpc_speed_opt_weight = 0
 
     def plan(self, states, waypoints=None):
         """
@@ -196,26 +209,88 @@ class STMPCPlanner:
         :return: reference trajectory ref_traj, reference steering angle
         """
 
-        # Find nearest index/setpoint from where the trajectories are calculated
-        _, dist, _, _, ind = nearest_point(np.array([position[0], position[1]]), path[:, (1, 2)])
-        # path[:, 5]
-
         speeds = np.ones(self.config.TK) * speed  # method 1
 
         # speeds = np.take(path[:, 5], range(ind, ind + self.config.TK), mode='wrap')  # method 2
 
         # speeds_ref = np.take(path[:, 5], range(ind, ind + self.config.TK), mode='wrap')  # method 3
         # speeds = (speeds_ref + speed) / 2.0
-        reference = self.get_reference_trajectory(speeds, dist, ind, path)
 
-        reference[3, :][reference[3, :] - orientation > 5] = np.abs(
-            reference[3, :][reference[3, :] - orientation > 5] - (2 * np.pi))
-        reference[3, :][reference[3, :] - orientation < -5] = np.abs(
-            reference[3, :][reference[3, :] - orientation < -5] + (2 * np.pi))
+        if not self.frenet:
+            # Find nearest index/setpoint from where the trajectories are calculated
+            _, dist, _, _, ind = nearest_point(np.array([position[0], position[1]]), path[:, (1, 2)])
+            # path[:, 5]
 
-        reference[2] = np.where(reference[2] - speed > 5.0, speed + 5.0, reference[2])
+            reference = self.get_reference_trajectory(speeds, dist, ind, path)
+
+            reference[3, :][reference[3, :] - orientation > 5] = np.abs(
+                reference[3, :][reference[3, :] - orientation > 5] - (2 * np.pi))
+            reference[3, :][reference[3, :] - orientation < -5] = np.abs(
+                reference[3, :][reference[3, :] - orientation < -5] + (2 * np.pi))
+
+            reference[2] = np.where(reference[2] - speed > 5.0, speed + 5.0, reference[2])
+        else:
+            position_ref = np.zeros((self.config.TK + 1, 2))
+            speed_ref = np.zeros(self.config.TK + 1)
+            position_ref[0, 0] = position[0]
+            speed_ref[0] = 5.0
+            for i in range(self.config.TK):
+                position_ref[i + 1, 0] = position_ref[i, 0] + speeds[i] * self.config.DTK
+                speed_ref[i + 1] = 5.0
+
+            reference = self.model.sort_reference_trajectory(position_ref,
+                                                             np.zeros(self.config.TK + 1),
+                                                             speed_ref)
 
         return reference, 0
+
+    def compute_speed_cost(self, x, u):
+        # Compute the cost in a DP like strategy: start from the last point x[len(x)-1] and move backwards
+        for i in range(0, len(x)):
+            idx = len(x) - 1 - i
+            if i == 0:
+                cost = [0]
+            else:
+                cost.append(cost[-1] + 1)
+
+        # Finally flip the cost to have correct order
+        return np.flip(cost).tolist()
+
+    def compute_tracking_cost(self, x, u):
+        # Compute the cost in a DP like strategy: start from the last point x[len(x)-1] and move backwards
+        for i in range(0, len(x)):
+            idx = len(x) - 1 - i
+
+            if i == 0:
+                cost = [np.dot(np.dot(x[idx], self.config.Qk), x[idx])]
+            elif idx == 0:
+                cost.append(np.dot(np.dot(x[idx], self.config.Qk), x[idx]))
+            else:
+                #                                  tracking error                             input cost                       prev cost
+                cost.append(np.dot(np.dot(x[idx], self.config.Qk), x[idx]) + np.dot(np.dot(u[idx], self.config.Rk), u[idx]) + cost[-1])
+
+        # Finally flip the cost to have correct order
+        return np.flip(cost).tolist()
+
+    def add_safe_trajectory(self, x, u):
+        # Add the feasible trajectory x and the associated input sequence u to the safe set
+        self.SS.append(copy.copy(x))
+        self.uSS.append(copy.copy(u))
+
+        # Compute and store the cost associated with the feasible trajectory
+        cost = self.compute_speed_cost(x, u)
+        self.Qfinal_speed.append(cost)  # final cost approximation for speed
+
+        # cost = self.compute_tracking_cost(x, u)
+        # self.Qfinal_tracking.append(cost)  # final cost approximation for tracking
+
+        # Initialize zVector
+        # self.zt = np.array(x[self.ftocp.N])
+
+        # Augment iteration counter and print the cost of the trajectories stored in the safe set
+        self.it = self.it + 1
+        print("Trajectory added to the Safe Set. Current Iteration: ", self.it)
+        print("Performance stored trajectories: \n", [self.Qfinal_speed[i][0] for i in range(0, self.it)])
 
     def mpc_prob_init(self):
         """
@@ -261,6 +336,8 @@ class STMPCPlanner:
         # Formulate and create the finite-horizon optimal control problem (objective function)
         # The FTOCP has the horizon of T timesteps
 
+        # Goal 1: Follow trajectory MPC
+
         # Objective 1: Influence of the control inputs: Inputs u multiplied by the penalty R
         objective += cvxpy.quad_form(cvxpy.vec(self.uk), R_block)
 
@@ -269,6 +346,8 @@ class STMPCPlanner:
 
         # Objective 3: Difference from one control input to the next control input weighted by Rd
         objective += cvxpy.quad_form(cvxpy.vec(cvxpy.diff(self.uk, axis=1)), Rd_block)
+
+        # Goal 2: Go as fast as possible
 
         # Constraints 1: Calculate the future vehicle behavior/states based on the vehicle dynamics model matrices
         # Evaluate vehicle Dynamics for next T timesteps
@@ -361,7 +440,8 @@ class STMPCPlanner:
         # Solve the optimization problem in CVXPY
         # Solver selections: cvxpy.OSQP; cvxpy.GUROBI
         # self.MPC_prob.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
-        self.MPC_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.01, eps_abs=0.0005, eps_rel=0.0005, verbose=False, warm_start=True)
+        self.MPC_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.01, eps_abs=0.0005, eps_rel=0.0005, verbose=False,
+                            warm_start=True)
         # time_end = time.time()
         # print(f'Solving time = {time_end - time_start}')
         # self.solve_time = time_end - time_start
@@ -393,10 +473,10 @@ class STMPCPlanner:
 
             # Call the Motion Prediction function: Predict the vehicle motion for x-steps
 
-        if not np.any(np.isnan(self.states_output)) and False:
+        if not np.any(np.isnan(self.states_output)):# and False:
             state_prediction = self.model.predict_kin_from_dyn(self.states_output, x0)
-            # input_prediction = np.zeros((self.config.NU, self.config.TK))  # self.input_o
-            input_prediction = self.input_o  # self.input_o
+            input_prediction = np.zeros((self.config.NU, self.config.TK))  # self.input_o
+            # input_prediction = self.input_o  # self.input_o
         else:
             state_prediction, input_prediction = self.model.predict_motion(x0, ref_control_input, self.config.DTK)
 
@@ -407,7 +487,9 @@ class STMPCPlanner:
 
     def MPC_Control(self, x0, path):
         # Calculate the next reference trajectory for the next T steps
+
         speed, orientation, position = self.model.get_general_states(x0)
+
         ref_path, self.target_ind = self.calc_ref_trajectory(position, orientation, speed, path)
         # Solve the Linear MPC Control problem
         (
