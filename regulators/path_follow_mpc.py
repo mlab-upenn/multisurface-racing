@@ -247,7 +247,6 @@ class STMPCPlanner:
     def compute_speed_cost(self, x, u):
         # Compute the cost in a DP like strategy: start from the last point x[len(x)-1] and move backwards
         for i in range(0, len(x)):
-            idx = len(x) - 1 - i
             if i == 0:
                 cost = [0]
             else:
@@ -260,14 +259,13 @@ class STMPCPlanner:
         # Compute the cost in a DP like strategy: start from the last point x[len(x)-1] and move backwards
         for i in range(0, len(x)):
             idx = len(x) - 1 - i
-
             if i == 0:
-                cost = [np.dot(np.dot(x[idx], self.config.Qk), x[idx])]
+                cost = [np.dot(np.dot(x[idx], self.config.Qk), x[idx])]  # Last element (finish line)
             elif idx == 0:
-                cost.append(np.dot(np.dot(x[idx], self.config.Qk), x[idx]))
-            else:
-                #                                  tracking error                             input cost                       prev cost
                 cost.append(np.dot(np.dot(x[idx], self.config.Qk), x[idx]) + np.dot(np.dot(u[idx], self.config.Rk), u[idx]) + cost[-1])
+            else:
+                #                                  tracking error                             input cost                                      input difference                               prev cost
+                cost.append(np.dot(np.dot(x[idx], self.config.Qk), x[idx]) + np.dot(np.dot(u[idx], self.config.Rk), u[idx]) + np.dot(np.dot(u[idx] - u[idx - 1], self.config.Rdk), u[idx]) + cost[-1])
 
         # Finally flip the cost to have correct order
         return np.flip(cost).tolist()
@@ -281,8 +279,8 @@ class STMPCPlanner:
         cost = self.compute_speed_cost(x, u)
         self.Qfinal_speed.append(cost)  # final cost approximation for speed
 
-        # cost = self.compute_tracking_cost(x, u)
-        # self.Qfinal_tracking.append(cost)  # final cost approximation for tracking
+        cost = self.compute_tracking_cost(x, u)
+        self.Qfinal_tracking.append(cost)  # final cost approximation for tracking
 
         # Initialize zVector
         # self.zt = np.array(x[self.ftocp.N])
