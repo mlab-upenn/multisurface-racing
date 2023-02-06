@@ -103,7 +103,7 @@ class STMPCPlanner:
         self.mpc_prob_init()
         self.solve_time = time.time()
 
-        self.frenet = False
+        self.trajectry_interpolation = 0  # 0 - linear, 1 - constant curvature
 
         # safe set
         self.SS = []  # safe set (states)
@@ -216,7 +216,8 @@ class STMPCPlanner:
         # speeds_ref = np.take(path[:, 5], range(ind, ind + self.config.TK), mode='wrap')  # method 3
         # speeds = (speeds_ref + speed) / 2.0
 
-        if not self.frenet:
+        if self.trajectry_interpolation == 0:
+            # TODO curently only for cartesian frame
             # Find nearest index/setpoint from where the trajectories are calculated
             _, dist, _, _, ind = nearest_point(np.array([position[0], position[1]]), path[:, (1, 2)])
             # path[:, 5]
@@ -229,18 +230,21 @@ class STMPCPlanner:
                 reference[3, :][reference[3, :] - orientation < -5] + (2 * np.pi))
 
             reference[2] = np.where(reference[2] - speed > 5.0, speed + 5.0, reference[2])
-        else:
+        elif self.trajectry_interpolation == 1:
+            # TODO curently only for frenet frame
+            # TODO calculate ref speed in better way -- speed_ref[i + 1] = speed is not accurate approximation for linearization point
+
             position_ref = np.zeros((self.config.TK + 1, 2))
             speed_ref = np.zeros(self.config.TK + 1)
             position_ref[0, 0] = position[0]
-            speed_ref[0] = 5.0
+            speed_ref[0] = speed
             for i in range(self.config.TK):
                 position_ref[i + 1, 0] = position_ref[i, 0] + speeds[i] * self.config.DTK
-                speed_ref[i + 1] = 5.0
+                speed_ref[i + 1] = speed
 
-            reference = self.model.sort_reference_trajectory(position_ref,
-                                                             np.zeros(self.config.TK + 1),
-                                                             speed_ref)
+            reference = self.model.sort_reference_trajectory(position_ref, np.zeros(self.config.TK + 1), speed_ref)
+        else:
+            print("ERROR: unknown trajectory interpolation method")
 
         return reference, 0
 

@@ -261,7 +261,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     if gp_mpc_type == 'frenet':
         planner_gp_mpc_frenet = STMPCPlanner(model=GPEnsembleModelFrenet(config=MPCConfigGPFrenet(), track=track), waypoints=waypoints,
                                              config=MPCConfigGPFrenet())
-        planner_gp_mpc_frenet.frenet = True
+        planner_gp_mpc_frenet.trajectry_interpolation = 1
 
     planner_ekin_mpc = STMPCPlanner(model=ExtendedKinematicModel(config=MPCConfigEXT()), waypoints=waypoints,
                                     config=MPCConfigEXT())
