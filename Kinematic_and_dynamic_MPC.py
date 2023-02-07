@@ -5,7 +5,6 @@ import sys
 from argparse import Namespace
 from regulators.pure_pursuit import *
 from regulators.path_follow_mpc import *
-from models.kinematic import KinematicModel
 from models.extended_kinematic import ExtendedKinematicModel
 from models.dynamic import DynamicBicycleModel
 from helpers.closest_point import *
@@ -43,45 +42,6 @@ class MPCConfigEXT:
     )  # final state error matrix, penalty  for the final state constraints
     N_IND_SEARCH: int = 20  # Search index number
     DTK: float = 0.1  # time step [s] kinematic
-    dlk: float = 3.0  # dist step [m] kinematic
-    LENGTH: float = 4.298  # Length of the vehicle [m]
-    WIDTH: float = 1.674  # Width of the vehicle [m]
-    LR: float = 1.50876
-    LF: float = 0.88392
-    WB: float = 0.88392 + 1.50876  # Wheelbase [m]
-    MIN_STEER: float = -0.4189  # maximum steering angle [rad]
-    MAX_STEER: float = 0.4189  # maximum steering angle [rad]
-    MAX_STEER_V: float = 3.2  # maximum steering speed [rad/s]
-    MAX_SPEED: float = 45.0  # maximum speed [m/s]
-    MIN_SPEED: float = 0.0  # minimum backward speed [m/s]
-    MAX_ACCEL: float = 11.5  # maximum acceleration [m/ss]
-    MAX_DECEL: float = -45.0  # maximum acceleration [m/ss]
-
-    MASS: float = 1225.887  # Vehicle mass
-
-
-@dataclass
-class MPCConfigKIN:
-    NXK: int = 4  # length of kinematic state vector: z = [x, y, vx, yaw angle]
-    NU: int = 2  # length of input vector: u = = [acceleration, steering speed]
-    TK: int = 100  # finite time horizon length kinematic
-
-    Rk: list = field(
-        default_factory=lambda: np.diag([0.01, 10])
-    )  # input cost matrix, penalty for inputs - [accel, steering_angle]
-    Rdk: list = field(
-        default_factory=lambda: np.diag([0.01, 10])
-    )  # input difference cost matrix, penalty for change of inputs - [accel, steering_angle]
-    Qk: list = field(
-        default_factory=lambda: 0.01 * np.diag([13.5, 13.5, 8.5, 0.0])
-        # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
-    )  # state error cost matrix, for the next (T) prediction time steps
-    Qfk: list = field(
-        default_factory=lambda: 0.01 * np.diag([13.5, 13.5, 8.5, 0.0])
-        # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
-    )  # final state error matrix, penalty  for the final state constraints
-    N_IND_SEARCH: int = 20  # Search index number
-    DTK: float = 0.01  # time step [s] kinematic
     dlk: float = 3.0  # dist step [m] kinematic
     LENGTH: float = 4.298  # Length of the vehicle [m]
     WIDTH: float = 1.674  # Width of the vehicle [m]
@@ -188,7 +148,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     """
 
     # Choose program parameters
-    model_to_use = 'ext_kinematic'  # options: ext_kinematic, pure_pursuit, dynamic, kinematic
+    model_to_use = 'ext_kinematic'  # options: ext_kinematic, pure_pursuit, dynamic
     map_name = 'rounded_rectangle'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange, Austin, Budapest, Catalunya
     # Hockenheim, IMS, Melbourne, MexicoCity, Montreal, Monza, MoscowRaceway, Oschersleben, Sakhir, Sepang, Silverstone, Sochi, Spa, Spielberg
     # YasMarina
@@ -204,7 +164,6 @@ def main():  # after launching this you can run visualization.py to see the resu
     start_point = 1  # index on the trajectory to start from
 
     ekin_config = MPCConfigEXT()
-    kin_config = MPCConfigKIN()
     dyn_config = MPCConfigDYN()
     # ekin_config.DTK = kin_config.DTK = dyn_config.DTK = control_step / 1000.0
 
@@ -261,9 +220,6 @@ def main():  # after launching this you can run visualization.py to see the resu
     planner_ekin_mpc = STMPCPlanner(model=ExtendedKinematicModel(config=MPCConfigEXT()), waypoints=waypoints,
                                     config=MPCConfigEXT())
 
-    planner_kin_mpc = STMPCPlanner(model=KinematicModel(config=MPCConfigKIN()), waypoints=waypoints,
-                                   config=MPCConfigKIN())
-
     planner_dyn_mpc = STMPCPlanner(model=DynamicBicycleModel(config=dyn_config), waypoints=waypoints,
                                    config=dyn_config)
 
@@ -315,23 +271,6 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     print('Model used: %s' % model_to_use)
 
-    x_data_lf, y_data_lf = [], []
-    x_data_rf, y_data_rf = [], []
-    x_data_lr, y_data_lr = [], []
-    x_data_rr, y_data_rr = [], []
-
-    x_data_lf_2, y_data_lf_2 = [], []
-    x_data_rf_2, y_data_rf_2 = [], []
-
-    # plt.ion()
-    # figure = plt.figure()
-    # line, = plt.plot(0.0, 0.0, 'bo', label='RF')
-    # line2, = plt.plot(0.0, 0.0, 'go', label='LF')
-    # plt.legend()
-
-    plot_every = 500
-    i_plot = 0
-
     while not done:
         # Regulator step MPC
         vehicle_state = np.array([env.sim.agents[0].state[0],  # x
@@ -363,20 +302,6 @@ def main():  # after launching this you can run visualization.py to see the resu
                 vehicle_state)
             u[0] = u[0] / planner_ekin_mpc.config.MASS  # Force to acceleration
             # u[0] = -u[1]
-            # draw predicted states and reference trajectory
-            draw.reference_traj_show = np.array([mpc_ref_path_x, mpc_ref_path_y]).T
-            draw.predicted_traj_show = np.array([mpc_pred_x, mpc_pred_y]).T
-        elif model_to_use == "kinematic":
-            # change of coordinates from CoG to center of the rear axle
-            x_cog = vehicle_state[0] - planner_kin_mpc.config.LR * np.cos(vehicle_state[3])
-            y_cog = vehicle_state[1] - planner_kin_mpc.config.LR * np.sin(vehicle_state[3])
-
-            u, mpc_ref_path_x, mpc_ref_path_y, mpc_pred_x, mpc_pred_y, mpc_ox, mpc_oy = planner_kin_mpc.plan(
-                np.array([x_cog, y_cog, vehicle_state[2], vehicle_state[3]]))
-            required_steering_angle = u[1]
-            error_steer = required_steering_angle - env.sim.agents[0].state[2]
-            u[1] = 10.0 * error_steer
-
             # draw predicted states and reference trajectory
             draw.reference_traj_show = np.array([mpc_ref_path_x, mpc_ref_path_y]).T
             draw.predicted_traj_show = np.array([mpc_pred_x, mpc_pred_y]).T
