@@ -5,12 +5,12 @@ This repository is using multi-body full scale car version of the [F1/10 gym](ht
 
 ## Entry points
 * GP_MPC.py
-    * MPC controller that is using learned GP model.
-* LMPC.py
-    * Currently does not work (Work in progress).
-    * Will be used for comparison as a different model learning method.
-    * Atempt to run [LMPC](https://github.com/urosolia/Learning_Robust_MPC/blob/main/Nominal_LMPC_Chapter/Ex3_LMPC_for_autonomous_racing/Ex3_LMPC_for_autonomous_racing.ipynb) in F1/10 gym.
-    * Currently can drive pure pursuit for the first three laps and create a "safe set" for LMPC initialization.
-* Kinematic_MPC.py
-    * You can choose from kinematin MPC or pure pursuit controler.
+    * Runs the first lap using a standard controller (Extended-Kinematic MPC or Pure Pursuit) and collects data for GP training.
+    * Trains the GP using the collected dataset and then switches to GP MPC.
+    * After every lap, it saves the dataset generated from driving on the track to a file called "testing_dataset.json".
+* GP_MPC_eval.py
+    * Loads in the dataset created by GP_MPC.py and retrains the GP on this dataset.
+    * THe trained GP(s) are then evaluated for prediction error.
+* Kinematic_and_dynamic_MPC.py.py
+    * You can choose from extended-kinematic MPC, dynamic (bicycle model) MPC, and pure pursuit controler.
     * Currently used for comparison against GP-MPC.
