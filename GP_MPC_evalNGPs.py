@@ -19,6 +19,9 @@ from pyglet.gl import GL_POINTS
 import pyglet
 import json
 import time
+
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 #
 # SAVE_MODELS = False
 # PRETRAINED = False
@@ -30,20 +33,20 @@ import time
 class MPCConfigGP:
     NXK: int = 7  # length of kinematic state vector: z = [x, y, vx, yaw angle, vy, yaw rate, steering angle]
     NU: int = 2  # length of input vector: u = = [acceleration, steering speed]
-    TK: int = 15  # finite time horizon length kinematic
+    TK: int = 10  # finite time horizon length kinematic
 
     Rk: list = field(
-        default_factory=lambda: np.diag([0.000000002, 3.0])
+        default_factory=lambda: np.diag([0.0000002, 3.0])
     )  # input cost matrix, penalty for inputs - [accel, steering_speed]
     Rdk: list = field(
-        default_factory=lambda: np.diag([0.000000003, 3.0])
+        default_factory=lambda: np.diag([0.0000003, 3.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([26.5, 26.5, 18.0, 20.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([13.5, 13.5, 5.0, 0.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # state error cost matrix, for the next (T) prediction time steps
     Qfk: list = field(
-        default_factory=lambda: np.diag([26.5, 26.5, 18.0, 20.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([13.5, 13.5, 5.0, 0.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # final state error matrix, penalty  for the final state constraints
     N_IND_SEARCH: int = 20  # Search index number
@@ -100,16 +103,16 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     # Choose program parameters
     map_name = 'DualLaneChange'  # SaoPaulo, rounded_rectangle, l_shape, DualLaneChange
-    use_dyn_friction = True
+    use_dyn_friction = False
     control_step = 100.0  # ms
     render_every = 1  # render graphics every n control steps
-    constant_friction = 1.1
+    constant_friction = 0.5
     constant_speed = True
     # datasets = ['dataset_lShape_0_5_100ms_v2', 'dataset_lShape_1_1_100ms_v2']
     datasets = ['dataset_DualLaneChange_0_5_100ms_v3',
                 # 'dataset_DualLaneChange_0_6_100ms_v2',
-                'dataset_DualLaneChange_0_6_100ms_v2',
-                'dataset_DualLaneChange_0_9_100ms_v2',
+                # 'dataset_DualLaneChange_0_6_100ms_v2',
+                # 'dataset_DualLaneChange_0_9_100ms_v2',
                 'dataset_DualLaneChange_1_1_100ms_v2'
                 ]
     N_HIST = 10
@@ -147,7 +150,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     waypoints[:, 3] += 1.5707963268
 
     if constant_speed:
-        waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 15.0
+        waypoints[:, 5] = np.ones((waypoints[:, 5].shape[0],)) * 15.5   
     else:
         waypoints[:, 5] *= 0.985
         waypoints[waypoints[:, 5] > 19.5, 5] = 19.5
@@ -243,6 +246,29 @@ def main():  # after launching this you can run visualization.py to see the resu
     prev_means = np.zeros((N_HIST, 3, NUM_MODELS))
     prev_observations = np.zeros((N_HIST, 3))
     prev_w = np.ones((NUM_MODELS, 1)) / NUM_MODELS
+
+
+    x_data_lf, y_data_lf = [], []
+    x_data_rf, y_data_rf = [], []
+    x_data_lr, y_data_lr = [], []
+    x_data_rr, y_data_rr = [], []
+
+    x_data_lf_2, y_data_lf_2 = [], []
+    x_data_rf_2, y_data_rf_2 = [], []
+
+
+    plt.ion()
+    figure = plt.figure()
+    line, = plt.plot(0.0, 0.0, 'b.', label='RF')
+    line2, = plt.plot(0.0, 0.0, 'g.', label='LF')
+    plt.xlabel('slip angle [rad]')
+    plt.ylabel('$F_y$ [N]')
+    plt.legend()
+
+    plot_every = 20
+    i_plot = 0
+
+
     while not done:
         # Regulator step MPC
         vehicle_state = np.array([env.sim.agents[0].state[0],
@@ -300,6 +326,40 @@ def main():  # after launching this you can run visualization.py to see the resu
         # print(f'Program time = {time_end - time_start}')
         algorithm_runtime_measurements.append(time_end - time_start)
         mpc_solve_time_measurements.append(planner_gp_mpc.solve_time)
+
+
+        y_data_lf.append(env.sim.agents[0].tire_forces[4])
+        x_data_lf.append(env.sim.agents[0].lateral_slip[0])
+
+        y_data_rf.append(env.sim.agents[0].tire_forces[5])
+        x_data_rf.append(env.sim.agents[0].lateral_slip[1])
+
+        y_data_lr.append(env.sim.agents[0].tire_forces[6])
+        x_data_lr.append(env.sim.agents[0].lateral_slip[2])
+
+        y_data_rr.append(env.sim.agents[0].tire_forces[7])
+        x_data_rr.append(env.sim.agents[0].lateral_slip[3])
+
+        x_data_lf_2.append(laptime)
+        y_data_lf_2.append(env.sim.agents[0].vertical_tire_forces[0])
+        x_data_rf_2.append(laptime)
+        y_data_rf_2.append(env.sim.agents[0].vertical_tire_forces[1])
+
+
+        if i_plot >= plot_every:
+            def update(frame):
+                line.set_data(x_data_lf, y_data_lf)
+                line2.set_data(x_data_rf, y_data_rf)
+                figure.gca().relim()
+                figure.gca().autoscale_view()
+                return line,
+
+            animation = FuncAnimation(figure, update, interval=200)
+
+            plt.show()
+            plt.pause(0.0001)
+            i_plot = 0
+        i_plot += 1
 
         # Simulation step
         step_reward = 0.0
@@ -370,7 +430,7 @@ def main():  # after launching this you can run visualization.py to see the resu
                 json.dump(log, f)
             print('Log saved...')
 
-        if obs['lap_counts'][0] == 30 or tracking_error > 10.0 or env.sim.agents[0].state[0] > 505:
+        if obs['lap_counts'][0] == 30: #or tracking_error > 10.0 or env.sim.agents[0].state[0] > 505:
             done = 1
 
     print('Sim elapsed time:', laptime, 'Real elapsed time:', time.time() - start)

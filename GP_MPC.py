@@ -219,11 +219,11 @@ def main():  # after launching this you can run visualization.py to see the resu
         raceline = np.loadtxt(conf.wpt_path, delimiter=";", skiprows=3)
         waypoints = np.array(raceline)
     else:
-        # centerline_descriptor = np.array([[0.0, 25 * np.pi, 25 * np.pi + 50, 2 * 25 * np.pi + 50, 2 * 25 * np.pi + 100],
-        #                                   [0.0, 0.0, -50.0, -50.0, 0.0],
-        #                                   [0.0, 50.0, 50.0, 0.0, 0.0],
-        #                                   [1 / 25, 0.0, 1 / 25, 0.0, 1 / 25],
-        #                                   [0.0, np.pi, np.pi, 0.0, 0.0]]).T
+        centerline_descriptor = np.array([[0.0, 25 * np.pi, 25 * np.pi + 50, 2 * 25 * np.pi + 50, 2 * 25 * np.pi + 100],
+                                          [0.0, 0.0, -50.0, -50.0, 0.0],
+                                          [0.0, 50.0, 50.0, 0.0, 0.0],
+                                          [1 / 25, 0.0, 1 / 25, 0.0, 1 / 25],
+                                          [0.0, np.pi, np.pi, 0.0, 0.0]]).T
 
         # centerline_descriptor = np.array([[0.0, 50.0, 25 * np.pi + 50, 25 * np.pi + 100, 25 * 2 * np.pi + 100],
         #                                   [0.0, -50.0, -50.0, 0.0, 0.0],
@@ -231,13 +231,13 @@ def main():  # after launching this you can run visualization.py to see the resu
         #                                   [0.0, -1 / 25, 0.0, -1/25, 0.0],
         #                                   [np.pi, np.pi, 0.0, 0.0, np.pi]]).T
 
-        centerline_descriptor = np.array([[0.0, 25 * np.pi, 25 * np.pi + 25, 25 * (3.0 * np.pi / 2.0) + 25, 25 * (3.0 * np.pi / 2.0) + 50,
-                                           25 * (2.0 * np.pi + np.pi / 2.0) + 50, 25 * (2.0 * np.pi + np.pi / 2.0) + 125, 25 * (3.0 * np.pi) + 125,
-                                           25 * (3.0 * np.pi) + 200],
-                                          [0.0, 0.0, -25.0, -50.0, -50.0, -100.0, -100.0, -75.0, 0.0],
-                                          [0.0, 50.0, 50.0, 75.0, 100.0, 100.0, 25.0, 0.0, 0.0],
-                                          [1 / 25, 0.0, -1 / 25, 0.0, 1 / 25, 0.0, 1 / 25, 0.0, 1/25],
-                                          [0.0, np.pi, np.pi, np.pi / 2.0, np.pi / 2.0, 3.0 * np.pi / 2.0, 3.0 * np.pi / 2.0, 0.0, 0.0]]).T
+        # centerline_descriptor = np.array([[0.0, 25 * np.pi, 25 * np.pi + 25, 25 * (3.0 * np.pi / 2.0) + 25, 25 * (3.0 * np.pi / 2.0) + 50,
+        #                                    25 * (2.0 * np.pi + np.pi / 2.0) + 50, 25 * (2.0 * np.pi + np.pi / 2.0) + 125, 25 * (3.0 * np.pi) + 125,
+        #                                    25 * (3.0 * np.pi) + 200],
+        #                                   [0.0, 0.0, -25.0, -50.0, -50.0, -100.0, -100.0, -75.0, 0.0],
+        #                                   [0.0, 50.0, 50.0, 75.0, 100.0, 100.0, 25.0, 0.0, 0.0],
+        #                                   [1 / 25, 0.0, -1 / 25, 0.0, 1 / 25, 0.0, 1 / 25, 0.0, 1/25],
+        #                                   [0.0, np.pi, np.pi, np.pi / 2.0, np.pi / 2.0, 3.0 * np.pi / 2.0, 3.0 * np.pi / 2.0, 0.0, 0.0]]).T
 
         print(centerline_descriptor)
         print(centerline_descriptor.shape)
@@ -260,7 +260,7 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     if gp_mpc_type == 'frenet':
         planner_gp_mpc_frenet = STMPCPlanner(model=GPEnsembleModelFrenet(config=MPCConfigGPFrenet(), track=track), waypoints=waypoints,
-                                             config=MPCConfigGPFrenet())
+                                             config=MPCConfigGPFrenet(), track=track)
         planner_gp_mpc_frenet.trajectry_interpolation = 1
 
     planner_ekin_mpc = STMPCPlanner(model=ExtendedKinematicModel(config=MPCConfigEXT()), waypoints=waypoints,
@@ -497,7 +497,7 @@ def main():  # after launching this you can run visualization.py to see the resu
                                        env.sim.agents[0].state[10],  # vy
                                        env.sim.agents[0].state[5],  # yaw rate
                                        env.sim.agents[0].state[2],  # steering angle
-                                       ]) + np.random.randn(7) * 0.00001
+                                       ]) #+ np.random.randn(7) * 0.00001
 
         if constant_speed:
             if obs['lap_counts'][0] >= 0 and waypoints[:, 5][0] < 18.7:
@@ -533,6 +533,10 @@ def main():  # after launching this you can run visualization.py to see the resu
 
         xcl.append(vehicle_state_next)
         ucl.append(u)
+
+        if planner_gp_mpc_frenet.it > 0:
+            planner_gp_mpc_frenet.add_point(vehicle_state, u)
+
 
         gather_data_every = 2
 
@@ -584,16 +588,6 @@ def main():  # after launching this you can run visualization.py to see the resu
 
             gp_model_trained += 1
             print("GP training...")
-            # scaled_x1, scaled_y1 = planner_gp_mpc.model.init_gp()
-            # planner_gp_mpc.model.train_gp(scaled_x1, scaled_y1)
-
-            # if waypoints[:, 5][0] > 7.5:
-            #     num_of_new_samples = 15
-            # else:
-
-            # if gp_model_trained <= 1:
-            #     num_of_new_samples = 300
-            # else:
             num_of_new_samples = 250
 
             if gp_mpc_type == 'cartesian':
@@ -604,8 +598,6 @@ def main():  # after launching this you can run visualization.py to see the resu
                 planner_gp_mpc_frenet.model.train_gp_min_variance(num_of_new_samples)
 
             print("GP training done")
-            # obs, step_reward, done, info = env.reset(np.array([[conf.sx * 10, conf.sy * 10, conf.stheta, 0.0, 10.0,
-            # 0.0, 0.0]]))
             print('Model used: GP')
             print('Reference speed: %f' % waypoints[:, 5][0])
 
@@ -624,13 +616,8 @@ def main():  # after launching this you can run visualization.py to see the resu
             with open('testing_dataset', 'w') as f:
                 json.dump(log_dataset, f)
 
-            # if not gp_model_trained <= 1:
-            #     obs, step_reward, done, info = env.reset(
-            #         np.array([[waypoints[start_id, 1], waypoints[start_id, 2], waypoints[start_id, 3] - np.pi, 0.0, waypoints[start_id, 5], 0.0, 0.0]]))
-            #     env.render()
-
         if obs['lap_counts'][0] - 1 == laps_done:
-            planner_gp_mpc.add_safe_trajectory(xcl, ucl)
+            planner_gp_mpc_frenet.add_safe_trajectory(np.array([xcl]), np.array([ucl]))
             xcl = []
             ucl = []
             laps_done += 1

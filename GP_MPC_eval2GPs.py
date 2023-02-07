@@ -408,7 +408,7 @@ def main():  # after launching this you can run visualization.py to see the resu
                 json.dump(log, f)
             print('Log saved...')
 
-        if obs['lap_counts'][0] == 30 or tracking_error > 10.0 or env.sim.agents[0].state[0] > 505:
+        if obs['lap_counts'][0] == 30:# or tracking_error > 10.0 or env.sim.agents[0].state[0] > 505:
             done = 1
 
     print('Sim elapsed time:', laptime, 'Real elapsed time:', time.time() - start)

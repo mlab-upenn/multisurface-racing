@@ -17,6 +17,8 @@ import numpy as np
 from pyglet.gl import GL_POINTS
 import pyglet
 import json
+import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 
 
 @dataclass
@@ -40,7 +42,7 @@ class MPCConfigEXT:
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # final state error matrix, penalty  for the final state constraints
     N_IND_SEARCH: int = 20  # Search index number
-    DTK: float = 0.01  # time step [s] kinematic
+    DTK: float = 0.1  # time step [s] kinematic
     dlk: float = 3.0  # dist step [m] kinematic
     LENGTH: float = 4.298  # Length of the vehicle [m]
     WIDTH: float = 1.674  # Width of the vehicle [m]
@@ -62,7 +64,7 @@ class MPCConfigEXT:
 class MPCConfigKIN:
     NXK: int = 4  # length of kinematic state vector: z = [x, y, vx, yaw angle]
     NU: int = 2  # length of input vector: u = = [acceleration, steering speed]
-    TK: int = 20  # finite time horizon length kinematic
+    TK: int = 100  # finite time horizon length kinematic
 
     Rk: list = field(
         default_factory=lambda: np.diag([0.01, 10])
@@ -101,7 +103,7 @@ class MPCConfigKIN:
 class MPCConfigDYN:
     NXK: int = 7  # length of kinematic state vector: z = [x, y, vx, yaw angle, vy, yaw rate, steering angle]
     NU: int = 2  # length of input vector: u = = [acceleration, steering speed]
-    TK: int = 20  # finite time horizon length kinematic
+    TK: int = 30  # finite time horizon length kinematic
 
     Rk: list = field(
         default_factory=lambda: np.diag([0.00000001, 10.0])
@@ -186,25 +188,25 @@ def main():  # after launching this you can run visualization.py to see the resu
     """
 
     # Choose program parameters
-    model_to_use = 'dynamic'  # options: ext_kinematic, pure_pursuit, dynamic
-    map_name = 'Sepang'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange, Austin, Budapest, Catalunya
+    model_to_use = 'ext_kinematic'  # options: ext_kinematic, pure_pursuit, dynamic, kinematic
+    map_name = 'rounded_rectangle'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange, Austin, Budapest, Catalunya
     # Hockenheim, IMS, Melbourne, MexicoCity, Montreal, Monza, MoscowRaceway, Oschersleben, Sakhir, Sepang, Silverstone, Sochi, Spa, Spielberg
     # YasMarina
-    rotate_map = True  # !!!! If the car is spawning with bad orientation change value here !!!! TODO Fix here so this is not needed anymore
+    rotate_map = False  # !!!! If the car is spawning with bad orientation change value here !!!! TODO Fix here so this is not needed anymore
     use_dyn_friction = False
-    constant_friction = 1.1
-    control_step = 50.0  # ms
+    constant_friction = 0.5
+    control_step = 100.0  # ms
     render_every = 40  # render graphics every n simulation steps
-    constant_speed = False
+    constant_speed = True
     constant_speed_value = 8.0
     velocity_profile_multiplier = 0.9
     number_of_laps = 5
-    start_point = 250  # index on the trajectory to start from
+    start_point = 1  # index on the trajectory to start from
 
     ekin_config = MPCConfigEXT()
     kin_config = MPCConfigKIN()
     dyn_config = MPCConfigDYN()
-    ekin_config.DTK = kin_config.DTK = dyn_config.DTK = control_step / 1000.0
+    # ekin_config.DTK = kin_config.DTK = dyn_config.DTK = control_step / 1000.0
 
     # Creating the single-track Motion planner and Controller
 
@@ -297,7 +299,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     env.add_render_callback(render_callback)
     # init vector = [x,y,yaw,steering angle, velocity, yaw_rate, beta]
     obs, step_reward, done, info = env.reset(
-        np.array([[waypoints[start_point, 1], waypoints[start_point, 2], waypoints[start_point, 3], 0.0, 0.0, 0.0, 0.0]]))
+        np.array([[waypoints[start_point, 1], waypoints[start_point, 2], waypoints[start_point, 3], 0.0, 8.0, 0.0, 0.0]]))
     env.render()
 
     laptime = 0.0
@@ -309,6 +311,26 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     # calc number of sim steps per one control step
     num_of_sim_steps = int(control_step / (env.timestep * 1000.0))
+
+
+    print('Model used: %s' % model_to_use)
+
+    x_data_lf, y_data_lf = [], []
+    x_data_rf, y_data_rf = [], []
+    x_data_lr, y_data_lr = [], []
+    x_data_rr, y_data_rr = [], []
+
+    x_data_lf_2, y_data_lf_2 = [], []
+    x_data_rf_2, y_data_rf_2 = [], []
+
+    # plt.ion()
+    # figure = plt.figure()
+    # line, = plt.plot(0.0, 0.0, 'bo', label='RF')
+    # line2, = plt.plot(0.0, 0.0, 'go', label='LF')
+    # plt.legend()
+
+    plot_every = 500
+    i_plot = 0
 
     while not done:
         # Regulator step MPC
@@ -340,7 +362,7 @@ def main():  # after launching this you can run visualization.py to see the resu
             u, mpc_ref_path_x, mpc_ref_path_y, mpc_pred_x, mpc_pred_y, mpc_ox, mpc_oy = planner_ekin_mpc.plan(
                 vehicle_state)
             u[0] = u[0] / planner_ekin_mpc.config.MASS  # Force to acceleration
-
+            # u[0] = -u[1]
             # draw predicted states and reference trajectory
             draw.reference_traj_show = np.array([mpc_ref_path_x, mpc_ref_path_y]).T
             draw.predicted_traj_show = np.array([mpc_pred_x, mpc_pred_y]).T
@@ -384,8 +406,44 @@ def main():  # after launching this you can run visualization.py to see the resu
             env.params['tire_p_dy1'] = constant_friction * 0.9  # mu_y
             env.params['tire_p_dx1'] = constant_friction  # mu_x
 
-        # print(env.params['tire_p_dx1'])
-        print("%f   %f" % (waypoints[:, 5][n_point], env.sim.agents[0].state[3]))
+        # # print(env.params['tire_p_dx1'])
+        # print("%f   %f" % (waypoints[:, 5][n_point], env.sim.agents[0].state[3]))
+        #
+        #
+        # x_data_lf_2.append(laptime)
+        # y_data_lf_2.append(env.sim.agents[0].vertical_tire_forces[0])
+        # x_data_rf_2.append(laptime)
+        # y_data_rf_2.append(env.sim.agents[0].vertical_tire_forces[1])
+        #
+        # y_data_lf.append(env.sim.agents[0].tire_forces[4])
+        # x_data_lf.append(env.sim.agents[0].lateral_slip[0])
+        #
+        # y_data_rf.append(env.sim.agents[0].tire_forces[5])
+        # x_data_rf.append(env.sim.agents[0].lateral_slip[1])
+        #
+        # y_data_lr.append(env.sim.agents[0].tire_forces[6])
+        # x_data_lr.append(env.sim.agents[0].lateral_slip[2])
+        #
+        # y_data_rr.append(env.sim.agents[0].tire_forces[7])
+        # x_data_rr.append(env.sim.agents[0].lateral_slip[3])
+        # if i_plot >= plot_every:
+        #     def update(frame):
+        #         line.set_data(x_data_lf, y_data_lf)
+        #         line2.set_data(x_data_rf, y_data_rf)
+        #         figure.gca().relim()
+        #         figure.gca().autoscale_view()
+        #         return line,
+        #
+        #     animation = FuncAnimation(figure, update, interval=200)
+        #
+        #     plt.show()
+        #     plt.pause(0.0001)
+        #     i_plot = 0
+        # i_plot += 1
+
+
+
+
 
         print('Model used: %s' % model_to_use)
         # Simulation step
