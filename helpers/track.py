@@ -163,6 +163,16 @@ class Track:
         plt.axis('square')
         plt.show()
 
+    def cartesian_to_frenet_arr(self, poses):  # TODO probably a good idea to rewrite this in batch mode
+        """
+        :param poses: list of pose -> pose = np.array([x,y,yaw])
+        :return: list of poses -> pose = np.array([s,ey,eyaw])
+        """
+        poses_frenet = []
+        for pose in poses:
+            poses_frenet.append(self.cartesian_to_frenet(pose))
+        return poses_frenet
+
     def cartesian_to_frenet(self, pose):
         """
         :param pose: np.array([x,y,yaw])
@@ -171,10 +181,10 @@ class Track:
         # trajectory ... s_m; x_m; y_m; psi_rad; kappa_radpm; vx_mps; ax_mps2
 
         min_id = get_closest_point_vectorized(point=pose[0:2], array=self.trajectory[:, 1:3])
-        print("----")
+        # print("----")
         # print(self.trajectory[min_id, :])
         # print(pose[0:2])
-        print(f"min_id {min_id}")
+        # print(f"min_id {min_id}")
         # print(self.trajectory[min_id, 3] - np.pi / 2)
 
         # print(np.arctan2(pose[1] - self.trajectory[min_id, 2], pose[0] - self.trajectory[min_id, 1]))
@@ -186,7 +196,7 @@ class Track:
         if a > np.pi:
             min_id = (min_id + self.trajectory.shape[0] - 2) % (self.trajectory.shape[0] - 1)
 
-        print(f"min_id corrected {min_id}")
+        # print(f"min_id corrected {min_id}")
 
         if self.trajectory[min_id, 4] == 0:
             # print("line")
@@ -214,7 +224,7 @@ class Track:
 
             # print(eyaw)
         else:
-            print("circle")
+            # print("circle")
             # print(min_id)
 
             # print(self.trajectory[min_id, 3])
@@ -225,8 +235,8 @@ class Track:
                                              radius=1.0 / self.trajectory[min_id, 4],
                                              direction=self.trajectory[min_id, 3])
 
-            print(center)  # correct
-            print(self.trajectory[min_id, 0])
+            # print(center)  # correct
+            # print(self.trajectory[min_id, 0])
 
             ey = (abs(1.0 / self.trajectory[min_id, 4]) - np.linalg.norm(center - pose[0:2])) * np.sign(self.trajectory[min_id, 4])
 
@@ -246,10 +256,10 @@ class Track:
             if angle < 0.0:
                 angle = angle + 2.0 * np.pi
 
-            print(f"start angle: {start_point_angle}")
-            print(f"end_angle: {end_angle}")
+            # print(f"start angle: {start_point_angle}")
+            # print(f"end_angle: {end_angle}")
 
-            print(angle)
+            # print(angle)
             # print(abs(1.0 / self.trajectory[min_id, 4]))
 
             # print(angle * abs(1.0 / self.trajectory[min_id, 4]))
@@ -268,6 +278,16 @@ class Track:
             eyaw += 2.0 * np.pi
 
         return np.array([s, ey, eyaw])
+
+    def frenet_to_cartesian_arr(self, poses):  # TODO probably a good idea to rewrite this in batch mode
+        """
+        :param poses: list of pose -> pose = np.array([s,ey,eyaw])
+        :return: list of poses -> pose = np.array([x,y,yaw])
+        """
+        poses_cartesian = []
+        for pose in poses:
+            poses_cartesian.append(self.frenet_to_cartesian(pose))
+        return poses_cartesian
 
     def frenet_to_cartesian(self, pose):
         """
@@ -333,7 +353,7 @@ if __name__ == "__main__":
     centerline_descriptor = np.array([[0.0, 50.0, 25 * np.pi + 50, 25 * np.pi + 100, 25 * 2 * np.pi + 100],
                                       [0.0, -50.0, -50.0, 0.0, 0.0],
                                       [0.0, 0.0, 50.0, 50.0, 0.0],
-                                      [0.0, -1 / 25, 0.0, -1/25, 0.0],
+                                      [0.0, -1 / 25, 0.0, -1 / 25, 0.0],
                                       [np.pi, np.pi, 0.0, 0.0, np.pi]]).T
 
     track = Track(centerline_descriptor=centerline_descriptor, track_width=10.0, reference_speed=5.0)
