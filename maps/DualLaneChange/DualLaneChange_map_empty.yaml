@@ -1,0 +1,6 @@
+image: DualLaneChange_map_empty.png
+resolution: 0.5005
+origin: [-394.2711136508635,-882.0832098289893, 0.000000]
+negate: 0
+occupied_thresh: 0.45
+free_thresh: 0.196

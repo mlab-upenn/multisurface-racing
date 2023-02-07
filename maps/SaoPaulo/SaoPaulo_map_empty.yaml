@@ -1,0 +1,6 @@
+image: SaoPaulo_map_empty.png
+resolution: 0.7542
+origin: [-981.1326416920916,-1065.3776182200401, 0.000000]
+negate: 0
+occupied_thresh: 0.45
+free_thresh: 0.196

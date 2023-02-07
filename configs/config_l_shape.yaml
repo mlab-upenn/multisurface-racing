@@ -1,0 +1,48 @@
+# metadata
+run_name: 'map_wide'
+# characteristic number for map
+perf_num: 6
+
+# map paths
+map_path: './maps/l_shape/example_map'
+map_ext: '.png'
+
+# starting pose for map
+sx: 0.0
+sy: 0.0
+stheta: 1.57
+
+# raceline path and indices
+#wpt_path: './maps/l_shape/waypoints/l_shape.csv'
+#wpt_path: './maps/l_shape/waypoints/l_shape_min.csv'
+#wpt_path: './maps/l_shape/waypoints/l_shape_mintime_l1200.csv'
+#wpt_path: './maps/l_shape/waypoints/l_shape_mintime_l1000.csv'
+wpt_path: './maps/l_shape/waypoints/l_shape_mintime_l720.csv'
+wpt_delim: ';'
+wpt_rowskip: 3
+wpt_xind: 1
+wpt_yind: 2
+wpt_thind: 3
+wpt_vind: 5
+
+# varied params bound
+# physical params
+mass_min: 3.0
+mass_max: 4.0
+lf_min: 0.147
+lf_max: 0.170
+# controller params
+tlad_min: 0.2
+tlad_max: 5.
+vgain_min: 0.5
+vgain_max: 1.5
+
+# computation budget (can think of it as gen_num times pop_size)
+popsize: 100
+budget: 1000
+
+# optimization method
+optim_method: 'CMA'
+
+# seed
+seed: 12345

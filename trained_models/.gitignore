@@ -1,0 +1,2 @@
+# Ignore all .pth models saved here
+*.pth
