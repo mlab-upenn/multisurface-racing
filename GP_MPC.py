@@ -617,7 +617,7 @@ def main():  # after launching this you can run visualization.py to see the resu
                 json.dump(log_dataset, f)
 
         if obs['lap_counts'][0] - 1 == laps_done:
-            planner_gp_mpc_frenet.add_safe_trajectory(np.array([xcl]), np.array([ucl]))
+            planner_gp_mpc_frenet.add_safe_trajectory(xcl, ucl)
             xcl = []
             ucl = []
             laps_done += 1

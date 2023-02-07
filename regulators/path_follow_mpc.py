@@ -284,7 +284,7 @@ class STMPCPlanner:
 
     def add_safe_trajectory(self, x, u):
 
-        self.LapTimes.append(x.shape[0])
+        self.LapTimes.append(len(x))
         # Add the feasible trajectory x and the associated input sequence u to the safe set
         self.SS_cartesian.append(copy.copy(x))
 
