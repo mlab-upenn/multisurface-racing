@@ -1,20 +1,15 @@
 import time
 import yaml
 import gym
-import sys
 from argparse import Namespace
 from regulators.pure_pursuit import *
 from regulators.path_follow_mpc import *
 from models.extended_kinematic import ExtendedKinematicModel
 from models.dynamic import DynamicBicycleModel
 from helpers.closest_point import *
-import torch
-import gpytorch
-import os
 import numpy as np
 
 from pyglet.gl import GL_POINTS
-import pyglet
 import json
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
