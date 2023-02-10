@@ -311,9 +311,11 @@ class STMPCPlanner:
         print("Trajectory added to the Safe Set. Current Iteration: ", self.it)
         print("Performance stored trajectories: \n", [self.Qfinal_speed[i][0] for i in range(0, self.it)])
 
-    def calc_safe_set_components(self):
+    def calc_safe_set_components(self, x0):
         # Update zt and xLin is they have crossed the finish line. We want s \in [0, TrackLength]
-        # TODO after understanding what it is
+        if (self.zt[0] - x0[0] > self.track_length / 2):
+            self.zt[0] = np.max([self.zt[0] - self.track_length, 0])
+            self.xLin[0, -1] = self.xLin[0, -1] - self.track_length  # TODO change xLin to correct variable
 
         # sort trajectories by time to construct safe set only from the best possible laps
         sortedLapTime = np.argsort(np.array(self.LapTimes))
@@ -329,30 +331,42 @@ class STMPCPlanner:
         self.numSS_Points = 12 * self.numSS_it
 
         for traj_idx in sortedLapTime[0:self.numSS_it]:  # from zero to N trajectories to compute SS with
-            SS_PointSelected, uSS_PointSelected, Qfun_Selected = self.select_points(traj_idx, self.zt, self.numSS_Points / self.numSS_it + 1)
+            SS_PointSelected, uSS_PointSelected, Qfun_speed_Selected, Qfun_track_Selected = self.select_points(traj_idx, self.zt,
+                                                                                                               self.numSS_Points / self.numSS_it + 1)
 
     def select_points(self, traj_idx, zt, num_points):
         x = self.SS_frenet[traj_idx]
         u = self.uSS[traj_idx]
 
         # Find the closest state between state zt and a last few runs
-        oneVec = np.ones((x.shape[0], 1))
-        x0Vec = (np.dot(np.array([zt]).T, oneVec.T)).T  # zt vector;  TODO zt ?? zt -> Global target??
-        diff = x - x0Vec
-        norm = np.linalg.norm(diff, 1, axis=1)
-        MinNorm = np.argmin(norm)
+        MinNorm = np.argmin(np.linalg.norm(x - zt, 1, axis=1))
 
         if (MinNorm - num_points / 2 >= 0):
-            indexSSandQfun = range(-int(num_points / 2) + MinNorm, int(num_points / 2) + MinNorm + 1)
+            indexSSandQfun = range(-int(num_points / 2) + MinNorm, int(num_points / 2) + MinNorm + 1)  # TODO maybe rewrite the range
         else:
             indexSSandQfun = range(MinNorm, MinNorm + int(num_points))
 
         SS_Points = x[indexSSandQfun, :].T
         SSu_Points = u[indexSSandQfun, :].T
-        Sel_Qfun = self.Qfinal_speed[traj_idx][indexSSandQfun]  # TODO test if this still works
-        Sel_Qfun = self.Qfinal_tracking[traj_idx][indexSSandQfun]  # TODO test if this still works
 
-        return 0, 0, 0
+        # Modify the cost if the predicion has crossed the finisch line
+        # TODO change xPred to correct variable, and correct self.xPred[:, 0]
+        if self.xPred == [] or (np.all((self.xPred[:, 0] > self.track_length) == False)):
+            Sel_Qfun_speed = self.Qfinal_speed[traj_idx][indexSSandQfun]  # TODO test if this still works (indexSSandQfun) -- indexing using range
+            Sel_Qfun_track = self.Qfinal_tracking[traj_idx][indexSSandQfun]  # TODO test if this still works
+        elif traj_idx < self.it - 1:  # Going through the finish line
+            Sel_Qfun_speed = self.Qfinal_speed[traj_idx][indexSSandQfun] + self.Qfinal_speed[traj_idx][0]
+            Sel_Qfun_track = self.Qfinal_tracking[traj_idx][indexSSandQfun] + self.Qfinal_tracking[traj_idx][0]
+        else:  # Going through the finish line and did not finish the second lap
+            sPred = self.xPred[:, 0]  # TODO change xPred to correct variable, and correct self.xPred[:, 0]
+            predCurrLap = self.config.TK - sum(sPred > self.track_length)
+            currLapTime = self.timeStep
+            # Sel_Qfun = self.Qfun[traj_idx][indexSSandQfun] + currLapTime + predCurrLap
+            Sel_Qfun_speed = self.Qfinal_speed[traj_idx][indexSSandQfun] + currLapTime + predCurrLap  # this is not good enough approximation
+            Sel_Qfun_track = self.Qfinal_tracking[traj_idx][indexSSandQfun] + currLapTime + predCurrLap  # this is not good enough approximation
+            # X      =            h(x)(it)           +    H(x)     +  (N-OVER)
+
+        return SS_Points, SSu_Points, Sel_Qfun_speed, Sel_Qfun_track
 
     def add_point(self, x, u):
         """at iteration j add the current point to SS, uSS and Qfun of the previous iteration

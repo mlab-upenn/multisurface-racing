@@ -328,14 +328,14 @@ def main():  # after launching this you can run visualization.py to see the resu
     print('Model used: %s' % model_in_first_lap)
 
     original_vel_profile = copy.deepcopy(waypoints[:, 5])
-    x0 = np.array([env.sim.agents[0].state[0],
-                   env.sim.agents[0].state[1],
-                   env.sim.agents[0].state[3],  # vx
-                   env.sim.agents[0].state[4],  # yaw angle
-                   env.sim.agents[0].state[10],  # vy
-                   env.sim.agents[0].state[5],  # yaw rate
-                   env.sim.agents[0].state[2],  # steering angle
-                   ]) + np.random.randn(7) * 0.00001
+    # x0 = np.array([env.sim.agents[0].state[0],
+    #                env.sim.agents[0].state[1],
+    #                env.sim.agents[0].state[3],  # vx
+    #                env.sim.agents[0].state[4],  # yaw angle
+    #                env.sim.agents[0].state[10],  # vy
+    #                env.sim.agents[0].state[5],  # yaw rate
+    #                env.sim.agents[0].state[2],  # steering angle
+    #                ]) + np.random.randn(7) * 0.00001
 
     xcl = []
     ucl = []
