@@ -26,6 +26,15 @@ Dynamic Single Track MPC waypoint tracker
 Author: Tomas Nagy, Hongrui Zheng, Johannes Betz, Ahmad Amine
 Last Modified: 8/1/22
 """
+
+# TODO change xLin to correct variable
+# TODO Reformulate OSQP optimization to CVXPY
+# TODO Change OSQP optimization from min-time to min-time + tracking
+# TODO Store GP covariance in safe set
+# TODO Add covariance minimization to optimization problem
+# TODO DEBUG
+# TODO Cleanup + Rewrite
+
 import time
 from dataclasses import dataclass, field
 import cvxpy
@@ -226,7 +235,7 @@ class STMPCPlanner:
         # speeds = (speeds_ref + speed) / 2.0
 
         if self.trajectry_interpolation == 0:
-            # TODO curently only for cartesian frame
+            # TODO TOMAS curently only for cartesian frame
             # Find nearest index/setpoint from where the trajectories are calculated
             _, dist, _, _, ind = nearest_point(np.array([position[0], position[1]]), path[:, (1, 2)])
             # path[:, 5]
@@ -240,8 +249,8 @@ class STMPCPlanner:
 
             reference[2] = np.where(reference[2] - speed > 5.0, speed + 5.0, reference[2])
         elif self.trajectry_interpolation == 1:
-            # TODO curently only for frenet frame
-            # TODO calculate ref speed in better way -- speed_ref[i + 1] = speed is not accurate approximation for linearization point
+            # TODO TOMAS curently only for frenet frame
+            # TODO TOMAS calculate ref speed in better way -- speed_ref[i + 1] = speed is not accurate approximation for linearization point
 
             position_ref = np.zeros((self.config.TK + 1, 2))
             speed_ref = np.zeros(self.config.TK + 1)
@@ -258,17 +267,35 @@ class STMPCPlanner:
         return reference, 0
 
     def compute_speed_cost(self, x, u):
+        """
+        :param x: vector of states
+        :param u: vecotr of control inputs
+
+        :return: list of accumulated minimum-time costs
+        """
+
         # Compute the cost in a DP like strategy: start from the last point x[len(x)-1] and move backwards
         for i in range(0, len(x)):
+            idx = len(x) - 1 - i
             if i == 0:
                 cost = [0]
+            elif idx == 0:
+                cost.append(1 + np.dot(np.dot(u[idx], self.config.Rk), u[idx]) + cost[-1])
             else:
-                cost.append(cost[-1] + 1)
+                cost.append(cost[-1] + 1 + np.dot(np.dot(u[idx], self.config.Rk), u[idx])
+                                         + np.dot(np.dot(u[idx] - u[idx - 1], self.config.Rdk), u[idx] - u[idx - 1]))
 
         # Finally flip the cost to have correct order
         return np.flip(cost).tolist()
 
     def compute_tracking_cost(self, x, u):
+        """
+        :param x: vector of states
+        :param u: vecotr of control inputs
+
+        :return: list of accumulated tracking costs
+        """
+
         # Compute the cost in a DP like strategy: start from the last point x[len(x)-1] and move backwards
         for i in range(0, len(x)):
             idx = len(x) - 1 - i
@@ -316,6 +343,14 @@ class STMPCPlanner:
         print("Performance stored trajectories: \n", [self.Qfinal_speed[i][0] for i in range(0, self.it)])
 
     def calc_safe_set_components(self, x0, xPred, uPred):
+        """
+        Calculates safe set components that will be used for MPC problem.
+
+        :param x0: Current state
+        :param xPred: Open-loop states over control horizon from MPC solver
+        :param uPred: Open-loop control inputs over control horizon from MPC solver
+        """
+
         # Update zt and xLin is they have crossed the finish line. We want s \in [0, TrackLength]
         if (self.zt[0] - x0[0] > self.track_length / 2):
             self.zt[0] = np.max([self.zt[0] - self.track_length, 0])
@@ -325,11 +360,11 @@ class STMPCPlanner:
         sortedLapTime = np.argsort(np.array(self.LapTimes))
 
         # Select Points from historical data. These points will be used to construct the terminal cost function and constraint set
-        # TODO change for our problem
-        # SS_PointSelectedTot = np.empty((self.n, 0))
-        # Succ_SS_PointSelectedTot = np.empty((self.n, 0))
-        # Succ_uSS_PointSelectedTot = np.empty((self.d, 0))
-        # Qfun_SelectedTot = np.empty((0))
+        SS_PointSelectedTot = np.empty((self.config.NXK, 0))
+        Succ_SS_PointSelectedTot = np.empty((self.config.NXK, 0))
+        Succ_uSS_PointSelectedTot = np.empty((self.config.NXK, 0))
+        Qfun_speed_SelectedTot = np.empty((0))
+        Qfun_track_SelectedTot = np.empty((0))
 
         self.numSS_it = 4
         self.numSS_Points = 12 * self.numSS_it
@@ -337,6 +372,22 @@ class STMPCPlanner:
         for traj_idx in sortedLapTime[0:self.numSS_it]:  # from zero to N trajectories to compute SS with
             SS_PointSelected, uSS_PointSelected, Qfun_speed_Selected, Qfun_track_Selected = self.select_points(traj_idx, self.zt,
                                                                                                                self.numSS_Points / self.numSS_it + 1, xPred, uPred)
+
+            Succ_SS_PointSelectedTot = np.append(Succ_SS_PointSelectedTot, SS_PointSelected[:, 1:], axis=1)
+            Succ_uSS_PointSelectedTot = np.append(Succ_uSS_PointSelectedTot, uSS_PointSelected[:, 1:], axis=1)
+            SS_PointSelectedTot = np.append(SS_PointSelectedTot, SS_PointSelected[:, 0:-1], axis=1)
+            Qfun_speed_SelectedTot = np.append(Qfun_speed_Selected, Qfun_speed_SelectedTot[0:-1], axis=0)
+            Qfun_track_SelectedTot = np.append(Qfun_track_Selected, Qfun_track_SelectedTot[0:-1], axis=0)
+
+        self.Succ_SS_PointSelectedTot = Succ_SS_PointSelectedTot
+        self.Succ_uSS_PointSelectedTot = Succ_uSS_PointSelectedTot
+        self.SS_PointSelectedTot = SS_PointSelectedTot
+        self.Qfun_speed_SelectedTot = Qfun_speed_SelectedTot
+        self.Qfun_track_SelectedTot = Qfun_track_SelectedTot
+
+        # Update terminal set and cost
+        self.addSafeSetEqConstr()
+        self.addSafeSetCost()
 
     def select_points(self, traj_idx, zt, num_points, xPred, uPred):
         '''
