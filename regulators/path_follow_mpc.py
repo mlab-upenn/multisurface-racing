@@ -118,6 +118,8 @@ class STMPCPlanner:
         self.it = 0  # LMPC iteration
         self.LapTimes = []
         self.zt = np.array([0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0])
+        self.time_step = 0
+        self.tracking_accumulated_cost = 0
 
         self.mpc_tracking_weight = 0
         self.mpc_speed_opt_weight = 0
@@ -308,10 +310,12 @@ class STMPCPlanner:
 
         # Augment iteration counter and print the cost of the trajectories stored in the safe set
         self.it = self.it + 1
+        self.time_step = 0
+        self.tracking_accumulated_cost = 0
         print("Trajectory added to the Safe Set. Current Iteration: ", self.it)
         print("Performance stored trajectories: \n", [self.Qfinal_speed[i][0] for i in range(0, self.it)])
 
-    def calc_safe_set_components(self, x0):
+    def calc_safe_set_components(self, x0, xPred, uPred):
         # Update zt and xLin is they have crossed the finish line. We want s \in [0, TrackLength]
         if (self.zt[0] - x0[0] > self.track_length / 2):
             self.zt[0] = np.max([self.zt[0] - self.track_length, 0])
@@ -332,9 +336,24 @@ class STMPCPlanner:
 
         for traj_idx in sortedLapTime[0:self.numSS_it]:  # from zero to N trajectories to compute SS with
             SS_PointSelected, uSS_PointSelected, Qfun_speed_Selected, Qfun_track_Selected = self.select_points(traj_idx, self.zt,
-                                                                                                               self.numSS_Points / self.numSS_it + 1)
+                                                                                                               self.numSS_Points / self.numSS_it + 1, xPred, uPred)
 
-    def select_points(self, traj_idx, zt, num_points):
+    def select_points(self, traj_idx, zt, num_points, xPred, uPred):
+        '''
+        Selects num_points samples from the traj_idx trajectory based on the num_points closest points to zt
+        :param traj_idx: index of trajectory to select from
+        :param zt: Expected end state
+        :param num_points: Number of points to approximate safe set with
+        :param xPred: The open-loop states along the control horizon from the MPC solution
+        :param uPred: The open-loop control inputs from the MPC solution
+
+        :return: SS_Points, the states of the chosen points of the safe set
+                 SSu_Points, the control inputs of the chosen points of the safe set
+                 Sel_Qfun_speed, the speed (minimum time) cost of the chosen points of the safe set
+                 Sel_Qfun_track, the tracking cost of the chosen points of the safe set
+        '''
+
+        # DONE FOR NOW, DEBUG FOREVER
         x = self.SS_frenet[traj_idx]
         u = self.uSS[traj_idx]
 
@@ -342,29 +361,30 @@ class STMPCPlanner:
         MinNorm = np.argmin(np.linalg.norm(x - zt, 1, axis=1))
 
         if (MinNorm - num_points / 2 >= 0):
-            indexSSandQfun = range(-int(num_points / 2) + MinNorm, int(num_points / 2) + MinNorm + 1)  # TODO maybe rewrite the range
+            indexSSandQfun = np.arange(-int(num_points / 2) + MinNorm, int(num_points / 2) + MinNorm + 1)
         else:
-            indexSSandQfun = range(MinNorm, MinNorm + int(num_points))
+            indexSSandQfun = np.arange(MinNorm, MinNorm + int(num_points))
 
         SS_Points = x[indexSSandQfun, :].T
         SSu_Points = u[indexSSandQfun, :].T
 
         # Modify the cost if the predicion has crossed the finisch line
-        # TODO change xPred to correct variable, and correct self.xPred[:, 0]
-        if self.xPred == [] or (np.all((self.xPred[:, 0] > self.track_length) == False)):
-            Sel_Qfun_speed = self.Qfinal_speed[traj_idx][indexSSandQfun]  # TODO test if this still works (indexSSandQfun) -- indexing using range
-            Sel_Qfun_track = self.Qfinal_tracking[traj_idx][indexSSandQfun]  # TODO test if this still works
+        if xPred == [] or (np.all((xPred[:, 0] > self.track_length) == False)):
+            Sel_Qfun_speed = self.Qfinal_speed[traj_idx][indexSSandQfun]
+            Sel_Qfun_track = self.Qfinal_tracking[traj_idx][indexSSandQfun]
         elif traj_idx < self.it - 1:  # Going through the finish line
             Sel_Qfun_speed = self.Qfinal_speed[traj_idx][indexSSandQfun] + self.Qfinal_speed[traj_idx][0]
             Sel_Qfun_track = self.Qfinal_tracking[traj_idx][indexSSandQfun] + self.Qfinal_tracking[traj_idx][0]
         else:  # Going through the finish line and did not finish the second lap
-            sPred = self.xPred[:, 0]  # TODO change xPred to correct variable, and correct self.xPred[:, 0]
+            sPred = xPred[:, 0]
             predCurrLap = self.config.TK - sum(sPred > self.track_length)
-            currLapTime = self.timeStep
+            currLapTime = self.time_step
+            curr_tracking_cost = self.tracking_accumulated_cost
+            pred_tracking_cost = self.compute_tracking_cost(xPred[sPred <= self.track_length, :], uPred[sPred <= self.track_length])[0] # SHOULD BE SUM TO N OF XQX + URU
             # Sel_Qfun = self.Qfun[traj_idx][indexSSandQfun] + currLapTime + predCurrLap
             Sel_Qfun_speed = self.Qfinal_speed[traj_idx][indexSSandQfun] + currLapTime + predCurrLap  # this is not good enough approximation
-            Sel_Qfun_track = self.Qfinal_tracking[traj_idx][indexSSandQfun] + currLapTime + predCurrLap  # this is not good enough approximation
-            # X      =            h(x)(it)           +    H(x)     +  (N-OVER)
+            Sel_Qfun_track = self.Qfinal_tracking[traj_idx][indexSSandQfun] + curr_tracking_cost + pred_tracking_cost  # this is not good enough approximation
+            #       X      =                      h(x)(it)                  +         H(x)       +      (N-OVER)
 
         return SS_Points, SSu_Points, Sel_Qfun_speed, Sel_Qfun_track
 
@@ -543,6 +563,7 @@ class STMPCPlanner:
         # self.MPC_prob.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
         self.MPC_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.01, eps_abs=0.0005, eps_rel=0.0005, verbose=False,
                             warm_start=True)
+
         # time_end = time.time()
         # print(f'Solving time = {time_end - time_start}')
         # self.solve_time = time_end - time_start
@@ -554,6 +575,9 @@ class STMPCPlanner:
         else:
             print("Error: Cannot solve KS mpc... Status : ", self.MPC_prob.status)
             ou, o_states = np.zeros(self.config.NU) * np.NAN, np.zeros(self.config.NXK) * np.NAN
+
+        self.time_step += 1
+        self.tracking_accumulated_cost += self.compute_tracking_cost(x0, ou[0])
 
         return ou, o_states
 
