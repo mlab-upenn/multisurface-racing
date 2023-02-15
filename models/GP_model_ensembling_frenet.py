@@ -8,6 +8,8 @@ import os
 import time
 import gc
 from dataclasses import dataclass, field
+from helpers.logging import create_logger
+import logging
 
 np.set_printoptions(precision=4, suppress=True)
 
@@ -65,9 +67,10 @@ class GPEnsembleModelFrenet:
     reference point - center of rear axle ? Need to check BayesRace paper
     """
 
-    def __init__(self, config, track):
+    def __init__(self, config, track, log_level=logging.INFO):
         self.config = config
         self.track = track
+        self.logger = create_logger("GPEnsembleModelFrenet", log_level)
 
         # gpytorch.settings.cg_tolerance(0.1)
 
@@ -203,7 +206,7 @@ class GPEnsembleModelFrenet:
                 # start = time.time()
                 mean, lower, upper = self.scale_and_predict_model_step(state_vec, control_vec)
                 # end = time.time()
-                # print(end - start)
+                # self.logger.debug(end - start)
 
                 h1 = jac[0].cpu().numpy()
                 h2 = jac[1].cpu().numpy()
@@ -283,10 +286,10 @@ class GPEnsembleModelFrenet:
                                   - h3[range(batch_size), 2] * yaw_rate - h3[range(batch_size), 3] * steering_angle - h3[
                                       range(batch_size), 4] * Fxr - h3[range(batch_size), 5] * delta_v
 
-        # print("Sigma %.6f     Mean %.6f" % (np.abs(mean[2] - lower[2]), mean[2]))
-        # print(A)
-        # print(B)
-        # print(C)
+        # self.logger.debug("Sigma %.6f     Mean %.6f" % (np.abs(mean[2] - lower[2]), mean[2]))
+        # self.logger.debug(A)
+        # self.logger.debug(B)
+        # self.logger.debug(C)
 
         return A, B, C
 
@@ -388,10 +391,10 @@ class GPEnsembleModelFrenet:
         C[5] = mean[2] - h3[0] * vx - h3[1] * vy - h3[2] * yaw_rate - h3[3] * steering_angle - h3[4] * Fxr - h3[
             5] * delta_v
 
-        # print("Sigma %.6f     Mean %.6f" % (np.abs(mean[2] - lower[2]), mean[2]))
-        # print(A)
-        # print(B)
-        # print(C)
+        # self.logger.debug("Sigma %.6f     Mean %.6f" % (np.abs(mean[2] - lower[2]), mean[2]))
+        # self.logger.debug(A)
+        # self.logger.debug(B)
+        # self.logger.debug(C)
 
         return A, B, C
 
@@ -496,6 +499,8 @@ class GPEnsembleModelFrenet:
         :param Y_sample: (np.array) error vector: [vx_error, vy_error, yaw_rate_error]
         :return:
         """
+        self.logger.debug("Adding new datapoint to GP model")
+
         X_sample = X_sample.tolist()
         Y_sample = Y_sample.tolist()
 
@@ -517,6 +522,8 @@ class GPEnsembleModelFrenet:
         self.y_measurements[2].append(Y_sample[2])
 
     def init_gp(self):
+        self.logger.info("Initializing GP model")
+
         train_x = torch.tensor([self.x_measurements[k] for k in range(6)])
         train_y = torch.tensor([self.y_measurements[k] for k in range(3)])
         train_y = train_y.contiguous()
@@ -553,6 +560,8 @@ class GPEnsembleModelFrenet:
         self.gp_likelihood.eval()
 
     def train_gp(self, train_x_scaled, train_y_scaled, method=0):
+        self.logger.info('Training GP model')
+
         self.gp_model = self.gp_model.cuda()
         self.gp_likelihood = self.gp_likelihood.cuda()
 
@@ -597,16 +606,18 @@ class GPEnsembleModelFrenet:
             loss = -mll(output, train_y_scaled)
             loss.backward()
             if i % 99 == 0:
-                print('Iter %d/%d - Loss: %.3f' % (i + 1, training_iterations, loss.item()))
+                self.logger.debug('Iter %d/%d - Loss: %.3f' % (i + 1, training_iterations, loss.item()))
             optimizer.step()
 
         # Set into eval mode
         self.gp_model.eval()
         self.gp_likelihood.eval()
         self.trained = True
-        print(len(self.x_samples[0]))
+        self.logger.debug(len(self.x_samples[0]))
 
     def train_gp_min_variance(self, num_of_new_samples=40):
+        self.logger.info('Training GP model with minimum variance')
+
         st_model = None
         st_like = None
         for i in range(num_of_new_samples):
@@ -751,7 +762,7 @@ class GPEnsembleModelFrenet:
                 loss = -mll(output, self.train_y_scaled)
                 loss.backward()
                 if k % 99 == 0:
-                    print('Iter %d/%d - Loss: %.3f' % (k + 1, training_iterations, loss.item()))
+                    self.logger.debug('Iter %d/%d - Loss: %.3f' % (k + 1, training_iterations, loss.item()))
                 optimizer.step()
 
             if (i + 1) % 500 == 0 or i == num_of_new_samples - 2:
@@ -765,7 +776,7 @@ class GPEnsembleModelFrenet:
             self.gp_model.eval()
             self.gp_likelihood.eval()
             self.trained = True
-            print(len(self.x_samples[0]))
+            self.logger.debug(len(self.x_samples[0]))
 
         self.x_measurements = [[] for i in range(6)]
         self.y_measurements = [[] for i in range(3)]
@@ -779,8 +790,9 @@ if __name__ == '__main__':
                                       [1 / 25, 0.0, 1 / 25, 0.0, 1 / 25],
                                       [0.0, np.pi, np.pi, 0.0, 0.0]]).T
 
-    print(centerline_descriptor)
-    print(centerline_descriptor.shape)
+    logger = create_logger('test', 'test.log', 'DEBUG')
+    logger.debug(centerline_descriptor)
+    logger.debug(centerline_descriptor.shape)
 
     # s, ey, vx, eyaw, vy, yaw_rate, _
     state = np.array([100.0, 5.0, 10.0, 0.1, 0.0, 0.0, 0.0])

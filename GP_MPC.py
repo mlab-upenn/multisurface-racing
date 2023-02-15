@@ -19,6 +19,7 @@ import pyglet
 import copy
 import json
 import logging
+from helpers.logging import create_logger
 
 @dataclass
 class MPCConfigEXT:
@@ -183,6 +184,8 @@ def main():  # after launching this you can run visualization.py to see the resu
     """
     main entry point
     """
+    main_logger = create_logger('main', logging.INFO)
+    main_logger.info('Starting main')
 
     # Program parameters
     model_in_first_lap = 'ext_kinematic'  # options: ext_kinematic, pure_pursuit
@@ -239,8 +242,8 @@ def main():  # after launching this you can run visualization.py to see the resu
         #                                   [1 / 25, 0.0, -1 / 25, 0.0, 1 / 25, 0.0, 1 / 25, 0.0, 1/25],
         #                                   [0.0, np.pi, np.pi, np.pi / 2.0, np.pi / 2.0, 3.0 * np.pi / 2.0, 3.0 * np.pi / 2.0, 0.0, 0.0]]).T
 
-        print(centerline_descriptor)
-        print(centerline_descriptor.shape)
+        main_logger.debug(centerline_descriptor)
+        main_logger.debug(centerline_descriptor.shape)
 
         track = Track(centerline_descriptor=centerline_descriptor, track_width=10.0, reference_speed=5.0, log_level=logging.DEBUG)
         waypoints = track.get_reference_trajectory()
@@ -325,7 +328,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     gather_data = 0
     logged_data = 0
 
-    print('Model used: %s' % model_in_first_lap)
+    main_logger.info('Model used: %s' % model_in_first_lap)
 
     original_vel_profile = copy.deepcopy(waypoints[:, 5])
     # x0 = np.array([env.sim.agents[0].state[0],
@@ -355,11 +358,11 @@ def main():  # after launching this you can run visualization.py to see the resu
 
         pose_frenet = track.cartesian_to_frenet(np.array([vehicle_state[0], vehicle_state[1], vehicle_state[3]]))  # np.array([x,y,yaw])
 
-        print(f"X: {vehicle_state[0]}  Y: {vehicle_state[1]}  S: {pose_frenet[0]}")
-        # print(f"X: {vehicle_state[0]}  Y: {vehicle_state[1]}  YAW: {vehicle_state[3]}  EYAW: {pose_frenet[2]}")
+        main_logger.debug(f"X: {vehicle_state[0]}  Y: {vehicle_state[1]}  S: {pose_frenet[0]}")
+        # main_logger.debug(f"X: {vehicle_state[0]}  Y: {vehicle_state[1]}  YAW: {vehicle_state[3]}  EYAW: {pose_frenet[2]}")
 
-        # print(env.sim.agents[0].state[10])
-        # print(env.sim.agents[0].state[3])
+        # main_logger.debug(env.sim.agents[0].state[10])
+        # main_logger.debug(env.sim.agents[0].state[3])
 
         if len(xcl) == 0:
             xcl.append(vehicle_state)  # add x0 to closed loop trajectory
@@ -370,7 +373,7 @@ def main():  # after launching this you can run visualization.py to see the resu
         total_var = 0.0
 
         if gp_model_trained <= 1:
-            print("Initial model")
+            main_logger.debug("Initial model")
             # if True:
             if model_in_first_lap == 'pure_pursuit':
                 # Regulator step pure pursuit
@@ -404,7 +407,7 @@ def main():  # after launching this you can run visualization.py to see the resu
                 u[1] += np.random.randn(1)[0] * 0.01
 
         else:
-            # print("GP model")
+            # main_logger.debug("GP model")
             if gp_mpc_type == 'cartesian':
                 u, mpc_ref_path_x, mpc_ref_path_y, mpc_pred_x, mpc_pred_y, mpc_ox, mpc_oy = planner_gp_mpc.plan(
                     vehicle_state)
@@ -460,7 +463,7 @@ def main():  # after launching this you can run visualization.py to see the resu
                 # _, tracking_error, _, _, _ = nearest_point_on_trajectory(np.array([mpc_pred_x[0], mpc_pred_y[0]]),
                 #                                                          np.array([mpc_ref_path_x[0:2], mpc_ref_path_y[0:2]]).T)
             else:
-                print("ERROR")
+                main_logger.error("GP MPC type not supported!")
         # u[0] += np.random.randn(1)[0] * 0.00001
         # u[1] += np.random.randn(1)[0] * 0.0001
 
@@ -544,9 +547,9 @@ def main():  # after launching this you can run visualization.py to see the resu
         vy_transition = env.sim.agents[0].state[10] + np.random.randn(1)[0] * 0.00001 - vehicle_state[4]
         yaw_rate_transition = env.sim.agents[0].state[5] + np.random.randn(1)[0] * 0.00001 - vehicle_state[5]
 
-        # print(mean[0] - vx_transition)
-        # print(gather_data_every)
-        # print('V: %f  Vx: %f  Vy: %f ' % (waypoints[:, 5][0], env.sim.agents[0].state[3], env.sim.agents[0].state[10]))
+        # main_logger.debug(mean[0] - vx_transition)
+        # main_logger.debug(gather_data_every)
+        # main_logger.debug('V: %f  Vx: %f  Vy: %f ' % (waypoints[:, 5][0], env.sim.agents[0].state[3], env.sim.agents[0].state[10]))
 
         gather_data += 1
         if gather_data >= gather_data_every:
@@ -587,19 +590,19 @@ def main():  # after launching this you can run visualization.py to see the resu
             last_speed = waypoints[:, 5][0]
 
             gp_model_trained += 1
-            print("GP training...")
+            main_logger.debug("GP training...")
             num_of_new_samples = 250
 
             if gp_mpc_type == 'cartesian':
-                print(f"{len(planner_gp_mpc.model.x_measurements[0])}")
+                main_logger.debug(f"{len(planner_gp_mpc.model.x_measurements[0])}")
                 planner_gp_mpc.model.train_gp_min_variance(num_of_new_samples)
             elif gp_mpc_type == 'frenet':
-                print(f"{len(planner_gp_mpc_frenet.model.x_measurements[0])}")
+                main_logger.debug(f"{len(planner_gp_mpc_frenet.model.x_measurements[0])}")
                 planner_gp_mpc_frenet.model.train_gp_min_variance(num_of_new_samples)
 
-            print("GP training done")
-            print('Model used: GP')
-            print('Reference speed: %f' % waypoints[:, 5][0])
+            main_logger.debug("GP training done")
+            main_logger.debug('Model used: GP')
+            main_logger.debug('Reference speed: %f' % waypoints[:, 5][0])
 
             log_dataset['X0'] = planner_gp_mpc.model.x_samples[0]
             log_dataset['X1'] = planner_gp_mpc.model.x_samples[1]
@@ -621,12 +624,12 @@ def main():  # after launching this you can run visualization.py to see the resu
             xcl = []
             ucl = []
             laps_done += 1
-            print("Now")
+            main_logger.debug('%d Laps Done' % laps_done)
 
         if obs['lap_counts'][0] == 60:
             done = 1
 
-    print('Sim elapsed time:', laptime, 'Real elapsed time:', time.time() - start)
+    main_logger.info('Sim elapsed time:', laptime, 'Real elapsed time:', time.time() - start)
     with open('log01', 'w') as f:
         json.dump(log, f)
 
