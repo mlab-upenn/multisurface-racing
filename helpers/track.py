@@ -2,7 +2,8 @@ import numpy as np
 import matplotlib.pyplot as plt
 from helpers.closest_point import get_closest_point_vectorized
 from helpers.console_handling import color_map
-
+from helpers.logging import create_logger
+import logging
 
 def determine_side(a, b, p):
     """ Determines, if car is on right side of trajectory or on left side
@@ -26,7 +27,7 @@ def determine_side(a, b, p):
 
 
 class Track:
-    def __init__(self, centerline_descriptor, track_width, reference_speed):
+    def __init__(self, centerline_descriptor, track_width, reference_speed, log_level=logging.ERROR):
         """
         :param centerline_descriptor: np.array Nx5 [s_start, start_x, start_y, curvature, start angle]
         :param track_width:
@@ -38,7 +39,10 @@ class Track:
         self.right_boundary = None
         self.calculate_trajectory(reference_speed)
         self.calculate_trajectory_boundary()
-        self.show_trajectory()
+        self.logger = create_logger('Track', 0)
+        self.logger.debug('Track initialized')
+        if self.logger.level >= logging.DEBUG:
+            self.show_trajectory()
 
     def calculate_trajectory_boundary(self):
         # initialize vector [number_of_points, 2]

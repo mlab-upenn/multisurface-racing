@@ -18,7 +18,7 @@ from pyglet.gl import GL_POINTS
 import pyglet
 import copy
 import json
-
+import logging
 
 @dataclass
 class MPCConfigEXT:
@@ -242,7 +242,7 @@ def main():  # after launching this you can run visualization.py to see the resu
         print(centerline_descriptor)
         print(centerline_descriptor.shape)
 
-        track = Track(centerline_descriptor=centerline_descriptor, track_width=10.0, reference_speed=5.0)
+        track = Track(centerline_descriptor=centerline_descriptor, track_width=10.0, reference_speed=5.0, log_level=logging.DEBUG)
         waypoints = track.get_reference_trajectory()
     # waypoints[:, 3] += 1.5707963268
 

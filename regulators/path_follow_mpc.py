@@ -628,7 +628,7 @@ class STMPCPlanner:
             ou, o_states = np.zeros(self.config.NU) * np.NAN, np.zeros(self.config.NXK) * np.NAN
 
         self.time_step += 1
-        self.tracking_accumulated_cost += self.compute_tracking_cost(x0, ou[0])
+        self.tracking_accumulated_cost += self.compute_tracking_cost((x0 - ref_traj[:,0]).reshape(1,-1), ou[:,0])[-1]
 
         return ou, o_states
 
