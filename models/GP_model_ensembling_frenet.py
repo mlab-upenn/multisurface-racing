@@ -67,7 +67,7 @@ class GPEnsembleModelFrenet:
     reference point - center of rear axle ? Need to check BayesRace paper
     """
 
-    def __init__(self, config, track, log_level=logging.INFO):
+    def __init__(self, config, track, log_level=logging.DEBUG):
         self.config = config
         self.track = track
         self.logger = create_logger("GPEnsembleModelFrenet", log_level)

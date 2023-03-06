@@ -59,6 +59,7 @@ class MPCConfigEXT:
 
     MASS: float = 1225.887  # Vehicle mass
 
+    LMPC_FLAG: bool = False  # LMPC flag
 
 @dataclass
 class MPCConfigGP:
@@ -98,6 +99,7 @@ class MPCConfigGP:
 
     MASS: float = 1225.887  # Vehicle mass
 
+    LMPC_FLAG: bool = False  # LMPC flag
 
 @dataclass
 class MPCConfigGPFrenet:
@@ -112,11 +114,11 @@ class MPCConfigGPFrenet:
         default_factory=lambda: np.diag([0.0000008, 2.0])
     )  # input difference cost matrix, penalty for change of inputs - [accel, steering_speed]
     Qk: list = field(
-        default_factory=lambda: np.diag([5.5, 10.5, 5.0, 8.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([0.0, 10.5, 5.0, 8.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # state error cost matrix, for the next (T) prediction time steps
     Qfk: list = field(
-        default_factory=lambda: np.diag([5.5, 10.5, 5.0, 8.0, 0.0, 0.0, 0.0])
+        default_factory=lambda: np.diag([0.0, 10.5, 5.0, 8.0, 0.0, 0.0, 0.0])
         # [13.5, 13.5, 5.5, 13.0, 0.0, 0.0, 0.0]
     )  # final state error matrix, penalty  for the final state constraints
     N_IND_SEARCH: int = 20  # Search index number
@@ -136,6 +138,12 @@ class MPCConfigGPFrenet:
     MAX_DECEL: float = -45.0  # maximum acceleration [m/ss]
 
     MASS: float = 1225.887  # Vehicle mass
+
+    # Safe Set Parameters
+    NUM_SS_IT: int = 4                  # Number of trajectories used at each iteration to build the safe set
+    NUM_SS_POINTS: int = 12*NUM_SS_IT    # Number of points to select from each trajectory to build the safe set
+
+    LMPC_FLAG: bool = False  # LMPC flag - Initially false until Safe Set is collected
 
 
 def draw_point(e, point, colour):
@@ -184,7 +192,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     """
     main entry point
     """
-    main_logger = create_logger('main', logging.INFO)
+    main_logger = create_logger('main', logging.DEBUG)
     main_logger.info('Starting main')
 
     # Program parameters
@@ -234,18 +242,18 @@ def main():  # after launching this you can run visualization.py to see the resu
         #                                   [0.0, -1 / 25, 0.0, -1/25, 0.0],
         #                                   [np.pi, np.pi, 0.0, 0.0, np.pi]]).T
 
-        # centerline_descriptor = np.array([[0.0, 25 * np.pi, 25 * np.pi + 25, 25 * (3.0 * np.pi / 2.0) + 25, 25 * (3.0 * np.pi / 2.0) + 50,
-        #                                    25 * (2.0 * np.pi + np.pi / 2.0) + 50, 25 * (2.0 * np.pi + np.pi / 2.0) + 125, 25 * (3.0 * np.pi) + 125,
-        #                                    25 * (3.0 * np.pi) + 200],
-        #                                   [0.0, 0.0, -25.0, -50.0, -50.0, -100.0, -100.0, -75.0, 0.0],
-        #                                   [0.0, 50.0, 50.0, 75.0, 100.0, 100.0, 25.0, 0.0, 0.0],
-        #                                   [1 / 25, 0.0, -1 / 25, 0.0, 1 / 25, 0.0, 1 / 25, 0.0, 1/25],
-        #                                   [0.0, np.pi, np.pi, np.pi / 2.0, np.pi / 2.0, 3.0 * np.pi / 2.0, 3.0 * np.pi / 2.0, 0.0, 0.0]]).T
+        centerline_descriptor = np.array([[0.0, 25 * np.pi, 25 * np.pi + 25, 25 * (3.0 * np.pi / 2.0) + 25, 25 * (3.0 * np.pi / 2.0) + 50,
+                                           25 * (2.0 * np.pi + np.pi / 2.0) + 50, 25 * (2.0 * np.pi + np.pi / 2.0) + 125, 25 * (3.0 * np.pi) + 125,
+                                           25 * (3.0 * np.pi) + 200],
+                                          [0.0, 0.0, -25.0, -50.0, -50.0, -100.0, -100.0, -75.0, 0.0],
+                                          [0.0, 50.0, 50.0, 75.0, 100.0, 100.0, 25.0, 0.0, 0.0],
+                                          [1 / 25, 0.0, -1 / 25, 0.0, 1 / 25, 0.0, 1 / 25, 0.0, 1/25],
+                                          [0.0, np.pi, np.pi, np.pi / 2.0, np.pi / 2.0, 3.0 * np.pi / 2.0, 3.0 * np.pi / 2.0, 0.0, 0.0]]).T
 
         main_logger.debug(centerline_descriptor)
         main_logger.debug(centerline_descriptor.shape)
 
-        track = Track(centerline_descriptor=centerline_descriptor, track_width=10.0, reference_speed=5.0, log_level=logging.DEBUG)
+        track = Track(centerline_descriptor=centerline_descriptor, track_width=10.0, reference_speed=5.0, log_level=0)
         waypoints = track.get_reference_trajectory()
     # waypoints[:, 3] += 1.5707963268
 
@@ -344,6 +352,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     ucl = []
     laps_done = 0
 
+    laps_before_LMPC = 5
     while not done:
 
         # Regulator step MPC
@@ -620,12 +629,18 @@ def main():  # after launching this you can run visualization.py to see the resu
                 json.dump(log_dataset, f)
 
         if obs['lap_counts'][0] - 1 == laps_done:
-            planner_gp_mpc_frenet.add_safe_trajectory(xcl, ucl)
+            planner_gp_mpc_frenet.add_safe_trajectory(xcl, ucl, xref, uref)
             xcl = []
             ucl = []
             laps_done += 1
             main_logger.debug('%d Laps Done' % laps_done)
 
+        if obs['lap_counts'][0] == laps_before_LMPC:
+            planner_gp_mpc_frenet.config.LMPC_FLAG = True
+
+            # Re-initialize the MPC problem with the new LMPC flag
+            planner_gp_mpc_frenet.mpc_prob_init()
+            
         if obs['lap_counts'][0] == 60:
             done = 1
 
