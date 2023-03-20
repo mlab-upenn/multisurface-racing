@@ -337,8 +337,8 @@ def main():  # after launching this you can run visualization.py to see the resu
                    env.sim.agents[0].state[2],  # steering angle
                    ]) + np.random.randn(7) * 0.00001
 
-    xcl = []
-    ucl = []
+    # xcl = []
+    # ucl = []
     laps_done = 0
 
     while not done:
@@ -361,8 +361,8 @@ def main():  # after launching this you can run visualization.py to see the resu
         # print(env.sim.agents[0].state[10])
         # print(env.sim.agents[0].state[3])
 
-        if len(xcl) == 0:
-            xcl.append(vehicle_state)  # add x0 to closed loop trajectory
+        # if len(xcl) == 0:
+        #     xcl.append(vehicle_state)  # add x0 to closed loop trajectory
 
         mean, lower, upper = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
         u = [0.0, 0.0]
@@ -531,8 +531,8 @@ def main():  # after launching this you can run visualization.py to see the resu
         # learning GPs
         u[0] = u[0] * planner_gp_mpc.config.MASS  # Acceleration to force
 
-        xcl.append(vehicle_state_next)
-        ucl.append(u)
+        # xcl.append(vehicle_state_next)
+        # ucl.append(u)
 
         if planner_gp_mpc_frenet.it > 0:
             planner_gp_mpc_frenet.add_point(vehicle_state, u)
@@ -617,9 +617,9 @@ def main():  # after launching this you can run visualization.py to see the resu
                 json.dump(log_dataset, f)
 
         if obs['lap_counts'][0] - 1 == laps_done:
-            planner_gp_mpc_frenet.add_safe_trajectory(np.array([xcl]), np.array([ucl]))
-            xcl = []
-            ucl = []
+            # planner_gp_mpc_frenet.add_safe_trajectory(np.array([xcl]), np.array([ucl]))
+            # xcl = []
+            # ucl = []
             laps_done += 1
             print("Now")
 
