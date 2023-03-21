@@ -186,7 +186,7 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     # Program parameters
     model_in_first_lap = 'ext_kinematic'  # options: ext_kinematic, pure_pursuit
-    # currently only "custom_track" works
+    # currently only "custom_track" works for frenet
     map_name = 'custom_track'  # Nuerburgring, SaoPaulo, rounded_rectangle, l_shape, BrandsHatch, DualLaneChange, custom_track
     use_dyn_friction = False
     gp_mpc_type = 'frenet'  # cartesian, frenet
@@ -194,6 +194,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     render_every = 30  # render graphics every n sim steps
     constant_speed = True
     constant_friction = 0.7
+    number_of_laps = 10
 
     # Creating the single-track Motion planner and Controller
 
@@ -601,15 +602,26 @@ def main():  # after launching this you can run visualization.py to see the resu
             print('Model used: GP')
             print('Reference speed: %f' % waypoints[:, 5][0])
 
-            log_dataset['X0'] = planner_gp_mpc.model.x_samples[0]
-            log_dataset['X1'] = planner_gp_mpc.model.x_samples[1]
-            log_dataset['X2'] = planner_gp_mpc.model.x_samples[2]
-            log_dataset['X3'] = planner_gp_mpc.model.x_samples[3]
-            log_dataset['X4'] = planner_gp_mpc.model.x_samples[4]
-            log_dataset['X5'] = planner_gp_mpc.model.x_samples[5]
-            log_dataset['Y0'] = planner_gp_mpc.model.y_samples[0]
-            log_dataset['Y1'] = planner_gp_mpc.model.y_samples[1]
-            log_dataset['Y2'] = planner_gp_mpc.model.y_samples[2]
+            if gp_mpc_type == 'cartesian':
+                log_dataset['X0'] = planner_gp_mpc.model.x_samples[0]
+                log_dataset['X1'] = planner_gp_mpc.model.x_samples[1]
+                log_dataset['X2'] = planner_gp_mpc.model.x_samples[2]
+                log_dataset['X3'] = planner_gp_mpc.model.x_samples[3]
+                log_dataset['X4'] = planner_gp_mpc.model.x_samples[4]
+                log_dataset['X5'] = planner_gp_mpc.model.x_samples[5]
+                log_dataset['Y0'] = planner_gp_mpc.model.y_samples[0]
+                log_dataset['Y1'] = planner_gp_mpc.model.y_samples[1]
+                log_dataset['Y2'] = planner_gp_mpc.model.y_samples[2]
+            elif gp_mpc_type == 'frenet':
+                log_dataset['X0'] = planner_gp_mpc_frenet.model.x_samples[0]
+                log_dataset['X1'] = planner_gp_mpc_frenet.model.x_samples[1]
+                log_dataset['X2'] = planner_gp_mpc_frenet.model.x_samples[2]
+                log_dataset['X3'] = planner_gp_mpc_frenet.model.x_samples[3]
+                log_dataset['X4'] = planner_gp_mpc_frenet.model.x_samples[4]
+                log_dataset['X5'] = planner_gp_mpc_frenet.model.x_samples[5]
+                log_dataset['Y0'] = planner_gp_mpc_frenet.model.y_samples[0]
+                log_dataset['Y1'] = planner_gp_mpc_frenet.model.y_samples[1]
+                log_dataset['Y2'] = planner_gp_mpc_frenet.model.y_samples[2]
 
             with open('log01', 'w') as f:
                 json.dump(log, f)
@@ -623,12 +635,14 @@ def main():  # after launching this you can run visualization.py to see the resu
             laps_done += 1
             print("Now")
 
-        if obs['lap_counts'][0] == 60:
+        if obs['lap_counts'][0] == number_of_laps:
             done = 1
 
     print('Sim elapsed time:', laptime, 'Real elapsed time:', time.time() - start)
     with open('log01', 'w') as f:
         json.dump(log, f)
+    with open('log_dataset', 'w') as f:
+        json.dump(log_dataset, f)
 
 
 if __name__ == '__main__':
