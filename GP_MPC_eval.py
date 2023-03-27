@@ -11,6 +11,7 @@ import torch
 import gpytorch
 import numpy as np
 from helpers.track import Track
+import datetime
 
 from pyglet.gl import GL_POINTS
 import json
@@ -146,6 +147,11 @@ def main():  # after launching this you can run visualization.py to see the resu
     control_step = 100.0  # ms
     render_every = 30  # render graphics every n sim steps
     constant_speed = True
+
+    SAVE_MODEL = False
+    PRETRAINED = False
+    PRETRAINED_MODEL = {'model': ['gp107-10-2022_18:02:54', 'gp1_likelihood07-10-2022_18:02:54']}
+
 
     # Creating the single-track Motion planner and Controller
 
@@ -303,13 +309,49 @@ def main():  # after launching this you can run visualization.py to see the resu
     print(len(planner_gp_mpc.model.x_measurements[0]))
     print("GP training...")
     train_x_scaled, train_y_scaled = planner_gp_mpc.model.init_gp()
+    # learn model from stored measurements
+    if not PRETRAINED:
+        if gp_mpc_type == 'cartesian':
+            print(f"{len(planner_gp_mpc.model.x_measurements[0])}")
+            planner_gp_mpc.model.train_gp_min_variance(len(planner_gp_mpc.model.x_measurements[0]))
 
-    if gp_mpc_type == 'cartesian':
-        print(f"{len(planner_gp_mpc.model.x_measurements[0])}")
-        planner_gp_mpc.model.train_gp_min_variance(len(planner_gp_mpc.model.x_measurements[0]))
-    elif gp_mpc_type == 'frenet':
-        print(f"{len(planner_gp_mpc_frenet.model.x_measurements[0])}")
-        planner_gp_mpc_frenet.model.train_gp_min_variance(len(planner_gp_mpc_frenet.model.x_measurements[0]))
+            if SAVE_MODEL:
+                now = datetime.now()
+                # dd/mm/YY H:M:S
+                dt_string = now.strftime("%d-%m-%Y_%H:%M:%S")
+
+                torch.save(planner_gp_mpc.model.gp_model.state_dict(), 'gp' + dt_string + '.pth')
+                torch.save(planner_gp_mpc.model.gp_likelihood.state_dict(), 'gp_likelihood' + dt_string + '.pth')
+
+        elif gp_mpc_type == 'frenet':
+            print(f"{len(planner_gp_mpc_frenet.model.x_measurements[0])}")
+            planner_gp_mpc_frenet.model.train_gp_min_variance(len(planner_gp_mpc_frenet.model.x_measurements[0]))
+
+            if SAVE_MODEL:
+                now = datetime.now()
+                # dd/mm/YY H:M:S
+                dt_string = now.strftime("%d-%m-%Y_%H:%M:%S")
+
+                torch.save(planner_gp_mpc_frenet.model.gp_model.state_dict(), 'gp' + dt_string + '.pth')
+                torch.save(planner_gp_mpc_frenet.model.gp_likelihood.state_dict(), 'gp_likelihood' + dt_string + '.pth')
+    else:
+        # If you have pretrained models, load them
+        model_path = PRETRAINED_MODEL['model']
+
+        if gp_mpc_type == 'cartesian':
+            # Load model
+            state_dict_gp1 = torch.load('trained_models/' + model_path[0] + '.pth').copy()
+            planner_gp_mpc.model.gp_model1.gp_model.load_state_dict(state_dict_gp1)
+
+            state_dict_likelihood1 = torch.load('trained_models/' + model_path[1] + '.pth').copy()
+            planner_gp_mpc.model.gp_model1.gp_likelihood.load_state_dict(state_dict_likelihood1)
+        elif gp_mpc_type == 'frenet':
+            # Load model
+            state_dict_gp1 = torch.load('trained_models/' + model_path[0] + '.pth').copy()
+            planner_gp_mpc_frenet.model.gp_model.load_state_dict(state_dict_gp1)
+
+            state_dict_likelihood1 = torch.load('trained_models/' + model_path[1] + '.pth').copy()
+            planner_gp_mpc_frenet.model.gp_likelihood.load_state_dict(state_dict_likelihood1)
 
     print("GP training done")
     gp_model_trained = 1
@@ -482,6 +524,22 @@ def main():  # after launching this you can run visualization.py to see the resu
     with open('log01_eval', 'w') as f:
         json.dump(log, f)
 
+    if gp_mpc_type == 'cartesian':
+        if SAVE_MODEL:
+            now = datetime.now()
+            # dd/mm/YY H:M:S
+            dt_string = now.strftime("%d-%m-%Y_%H:%M:%S")
+
+            torch.save(planner_gp_mpc.model.gp_model.state_dict(), 'gp' + dt_string + '.pth')
+            torch.save(planner_gp_mpc.model.gp_likelihood.state_dict(), 'gp_likelihood' + dt_string + '.pth')
+    elif gp_mpc_type == 'frenet':
+        if SAVE_MODEL:
+            now = datetime.now()
+            # dd/mm/YY H:M:S
+            dt_string = now.strftime("%d-%m-%Y_%H:%M:%S")
+
+            torch.save(planner_gp_mpc_frenet.model.gp_model.state_dict(), 'gp' + dt_string + '.pth')
+            torch.save(planner_gp_mpc_frenet.model.gp_likelihood.state_dict(), 'gp_likelihood' + dt_string + '.pth')
 
 if __name__ == '__main__':
     main()
