@@ -109,6 +109,10 @@ def main():  # after launching this you can run visualization.py to see the resu
                 # 'dataset_DualLaneChange_0_9_100ms_v2',
                 'dataset_DualLaneChange_1_1_100ms_v2'
                 ]
+    
+    LOAD_PRETRAINED = False
+    PRETRAINED_MODELS = {'model': ['gp107-10-2022_18:02:54', 'gp1_likelihood07-10-2022_18:02:54']}
+    
     N_HIST = 10
     EPS = 0.00001
     NUM_MODELS = len(datasets)
@@ -211,24 +215,32 @@ def main():  # after launching this you can run visualization.py to see the resu
     num_of_sim_steps = int(control_step / (env.timestep * 1000.0))
 
     for i in range(NUM_MODELS):
-        with open(datasets[i], 'r') as f:
-            data = json.load(f)
+        if LOAD_PRETRAINED:
+            # Load model
+            state_dict_gp1 = torch.load('trained_models/' + PRETRAINED_MODELS[i][0] + '.pth').copy()
+            planner_gp_mpc.model.gp_models[i].gp_model.load_state_dict(state_dict_gp1)
 
-        planner_gp_mpc.model.gp_models[i].x_measurements[0] = data['X0']
-        planner_gp_mpc.model.gp_models[i].x_measurements[1] = data['X1']
-        planner_gp_mpc.model.gp_models[i].x_measurements[2] = data['X2']
-        planner_gp_mpc.model.gp_models[i].x_measurements[3] = data['X3']
-        planner_gp_mpc.model.gp_models[i].x_measurements[4] = data['X4']
-        planner_gp_mpc.model.gp_models[i].x_measurements[5] = data['X5']
-        planner_gp_mpc.model.gp_models[i].y_measurements[0] = data['Y0']
-        planner_gp_mpc.model.gp_models[i].y_measurements[1] = data['Y1']
-        planner_gp_mpc.model.gp_models[i].y_measurements[2] = data['Y2']
-        print(len(planner_gp_mpc.model.gp_models[i].x_measurements[0]))
-        scaled_x, scaled_y = planner_gp_mpc.model.gp_models[i].init_gp()
-        print(f'train model {i}')
-        print("GP training...")
-        planner_gp_mpc.model.gp_models[i].train_gp(scaled_x, scaled_y, method=0)
-        print("GP training done")
+            state_dict_likelihood1 = torch.load('trained_models/' + PRETRAINED_MODELS[i][1] + '.pth').copy()
+            planner_gp_mpc.model.gp_models[i].gp_likelihood.load_state_dict(state_dict_likelihood1)
+        else:
+            with open(datasets[i], 'r') as f:
+                data = json.load(f)
+
+            planner_gp_mpc.model.gp_models[i].x_measurements[0] = data['X0']
+            planner_gp_mpc.model.gp_models[i].x_measurements[1] = data['X1']
+            planner_gp_mpc.model.gp_models[i].x_measurements[2] = data['X2']
+            planner_gp_mpc.model.gp_models[i].x_measurements[3] = data['X3']
+            planner_gp_mpc.model.gp_models[i].x_measurements[4] = data['X4']
+            planner_gp_mpc.model.gp_models[i].x_measurements[5] = data['X5']
+            planner_gp_mpc.model.gp_models[i].y_measurements[0] = data['Y0']
+            planner_gp_mpc.model.gp_models[i].y_measurements[1] = data['Y1']
+            planner_gp_mpc.model.gp_models[i].y_measurements[2] = data['Y2']
+            print(len(planner_gp_mpc.model.gp_models[i].x_measurements[0]))
+            scaled_x, scaled_y = planner_gp_mpc.model.gp_models[i].init_gp()
+            print(f'train model {i}')
+            print("GP training...")
+            planner_gp_mpc.model.gp_models[i].train_gp(scaled_x, scaled_y, method=0)
+            print("GP training done")
 
     # done training
     gp_models_trained = 1
