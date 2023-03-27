@@ -341,10 +341,10 @@ def main():  # after launching this you can run visualization.py to see the resu
         if gp_mpc_type == 'cartesian':
             # Load model
             state_dict_gp1 = torch.load('trained_models/' + model_path[0] + '.pth').copy()
-            planner_gp_mpc.model.gp_model1.gp_model.load_state_dict(state_dict_gp1)
+            planner_gp_mpc.model.gp_model.load_state_dict(state_dict_gp1)
 
             state_dict_likelihood1 = torch.load('trained_models/' + model_path[1] + '.pth').copy()
-            planner_gp_mpc.model.gp_model1.gp_likelihood.load_state_dict(state_dict_likelihood1)
+            planner_gp_mpc.model.gp_likelihood.load_state_dict(state_dict_likelihood1)
         elif gp_mpc_type == 'frenet':
             # Load model
             state_dict_gp1 = torch.load('trained_models/' + model_path[0] + '.pth').copy()
