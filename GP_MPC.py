@@ -17,6 +17,7 @@ import numpy as np
 from datetime import datetime
 
 from helpers.draw_debug import DrawDebug
+from helpers.utils import save_GP_enemble_model
 import copy
 import json
 
@@ -487,22 +488,11 @@ def main():  # after launching this you can run visualization.py to see the resu
     with open('log_dataset', 'w') as f:
         json.dump(log_dataset, f)
 
-    if gp_mpc_type == 'cartesian':
-        if SAVE_MODEL:
-            now = datetime.now()
-            # dd/mm/YY H:M:S
-            dt_string = now.strftime("%d-%m-%Y_%H:%M:%S")
-
-            torch.save(planner_gp_mpc.model.gp_model.state_dict(), 'gp' + dt_string + '.pth')
-            torch.save(planner_gp_mpc.model.gp_likelihood.state_dict(), 'gp_likelihood' + dt_string + '.pth')
-    elif gp_mpc_type == 'frenet':
-        if SAVE_MODEL:
-            now = datetime.now()
-            # dd/mm/YY H:M:S
-            dt_string = now.strftime("%d-%m-%Y_%H:%M:%S")
-
-            torch.save(planner_gp_mpc_frenet.model.gp_model.state_dict(), 'gp' + dt_string + '.pth')
-            torch.save(planner_gp_mpc_frenet.model.gp_likelihood.state_dict(), 'gp_likelihood' + dt_string + '.pth')
+    if SAVE_MODEL:
+        if gp_mpc_type == 'cartesian':
+            save_GP_enemble_model(planner_gp_mpc.model)
+        elif gp_mpc_type == 'frenet':
+            save_GP_enemble_model(planner_gp_mpc_frenet.model)
 
 
 if __name__ == '__main__':
