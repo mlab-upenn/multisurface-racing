@@ -11,7 +11,7 @@ import torch
 import gpytorch
 import numpy as np
 
-from pyglet.gl import GL_POINTS
+from helpers.draw_debug import DrawDebug
 import json
 import time
 
@@ -22,35 +22,6 @@ from matplotlib.animation import FuncAnimation
 # PRETRAINED = False
 # PRETRAINED_NAMES = {'model1': ['gp107-10-2022_18:02:54', 'gp1_likelihood07-10-2022_18:02:54'],
 #                     'model2': ['gp207-10-2022_18:02:54', 'gp2_likelihood07-10-2022_18:02:54']}
-
-
-def draw_point(e, point, colour):
-    scaled_point = 50. * point
-    ret = e.batch.add(1, GL_POINTS, None, ('v3f/stream', [scaled_point[0], scaled_point[1], 0]), ('c3B/stream', colour))
-    return ret
-
-
-class DrawDebug:
-    def __init__(self):
-        self.reference_traj_show = np.array([[0, 0]])
-        self.predicted_traj_show = np.array([[0, 0]])
-        self.dyn_obj_drawn = []
-        self.f = 0
-
-    def draw_debug(self, e):
-        # delete dynamic objects
-        while len(self.dyn_obj_drawn) > 0:
-            if self.dyn_obj_drawn[0] is not None:
-                self.dyn_obj_drawn[0].delete()
-            self.dyn_obj_drawn.pop(0)
-
-        # spawn new objects
-        for p in self.reference_traj_show:
-            self.dyn_obj_drawn.append(draw_point(e, p, [255, 0, 0]))
-
-        for p in self.predicted_traj_show:
-            self.dyn_obj_drawn.append(draw_point(e, p, [0, 255, 0]))
-
 
 def main():  # after launching this you can run visualization.py to see the results
     """
