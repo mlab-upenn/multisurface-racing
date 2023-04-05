@@ -362,10 +362,7 @@ def main():  # after launching this you can run visualization.py to see the resu
             X_sample = np.array([float(vehicle_state[2]), float(vehicle_state[4]),
                                  float(vehicle_state[5]), float(vehicle_state[6]), float(u[0]), float(u[1])])
 
-            if gp_mpc_type == 'cartesian':
-                planner_gp_mpc.model.add_new_datapoint(X_sample, Y_sample)
-            elif gp_mpc_type == 'frenet':
-                planner_gp_mpc.model.add_new_datapoint(X_sample, Y_sample)
+            planner_gp_mpc.model.add_new_datapoint(X_sample, Y_sample)
             gather_data = 0
 
         if obs['lap_counts'][0] - 1 == gp_model_trained:
@@ -376,12 +373,8 @@ def main():  # after launching this you can run visualization.py to see the resu
             print("GP training...")
             num_of_new_samples = 250
 
-            if gp_mpc_type == 'cartesian':
-                print(f"{len(planner_gp_mpc.model.x_measurements[0])}")
-                planner_gp_mpc.model.train_gp_min_variance(num_of_new_samples)
-            elif gp_mpc_type == 'frenet':
-                print(f"{len(planner_gp_mpc.model.x_measurements[0])}")
-                planner_gp_mpc.model.train_gp_min_variance(num_of_new_samples)
+            print(f"{len(planner_gp_mpc.model.x_measurements[0])}")
+            planner_gp_mpc.model.train_gp_min_variance(num_of_new_samples)
 
             print("GP training done")
             print('Model used: GP')
@@ -404,9 +397,6 @@ def main():  # after launching this you can run visualization.py to see the resu
                 json.dump(log_dataset, f)
 
         if obs['lap_counts'][0] - 1 == laps_done:
-            # planner_gp_mpc_frenet.add_safe_trajectory(np.array([xcl]), np.array([ucl]))
-            # xcl = []
-            # ucl = []
             laps_done += 1
             print("Now")
 
