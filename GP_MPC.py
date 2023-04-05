@@ -36,7 +36,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     render_every = 30  # render graphics every n sim steps
     constant_speed = True
     constant_friction = 0.7
-    number_of_laps = 2
+    number_of_laps = 20
     SAVE_MODEL = True
 
 
@@ -100,13 +100,18 @@ def main():  # after launching this you can run visualization.py to see the resu
     planner_pp = PurePursuitPlanner(conf, 0.805975 + 1.50876)  # 0.805975 + 1.50876
     planner_pp.waypoints = waypoints
 
-    planner_gp_mpc = STMPCPlanner(model=GPEnsembleModel(config=MPCConfigGP()), waypoints=waypoints,
-                                  config=MPCConfigGP())
+    planner_gp_mpc = None
 
     if gp_mpc_type == 'frenet':
-        planner_gp_mpc_frenet = STMPCPlanner(model=GPEnsembleModelFrenet(config=MPCConfigGPFrenet(), track=track), waypoints=waypoints,
+        planner_gp_mpc = STMPCPlanner(model=GPEnsembleModelFrenet(config=MPCConfigGPFrenet(), track=track), waypoints=waypoints,
                                              config=MPCConfigGPFrenet(), track=track)
-        planner_gp_mpc_frenet.trajectry_interpolation = 1
+        planner_gp_mpc.trajectry_interpolation = 1
+    elif gp_mpc_type == 'cartesian':
+        planner_gp_mpc = STMPCPlanner(model=GPEnsembleModel(config=MPCConfigGP()), waypoints=waypoints,
+                                  config=MPCConfigGP())
+    else:
+        raise ValueError('Unknown gp_mpc_type')
+
 
     planner_ekin_mpc = STMPCPlanner(model=ExtendedKinematicModel(config=MPCConfigEXT()), waypoints=waypoints,
                                     config=MPCConfigEXT())
@@ -173,17 +178,7 @@ def main():  # after launching this you can run visualization.py to see the resu
     print('Model used: %s' % model_in_first_lap)
 
     original_vel_profile = copy.deepcopy(waypoints[:, 5])
-    x0 = np.array([env.sim.agents[0].state[0],
-                   env.sim.agents[0].state[1],
-                   env.sim.agents[0].state[3],  # vx
-                   env.sim.agents[0].state[4],  # yaw angle
-                   env.sim.agents[0].state[10],  # vy
-                   env.sim.agents[0].state[5],  # yaw rate
-                   env.sim.agents[0].state[2],  # steering angle
-                   ]) + np.random.randn(7) * 0.00001
-
-    # xcl = []
-    # ucl = []
+    
     laps_done = 0
 
     while not done:
@@ -197,17 +192,6 @@ def main():  # after launching this you can run visualization.py to see the resu
                                   env.sim.agents[0].state[5],  # yaw rate
                                   env.sim.agents[0].state[2],  # steering angle
                                   ])  # + np.random.randn(7) * 0.00001
-
-        pose_frenet = track.cartesian_to_frenet(np.array([vehicle_state[0], vehicle_state[1], vehicle_state[3]]))  # np.array([x,y,yaw])
-
-        print(f"X: {vehicle_state[0]}  Y: {vehicle_state[1]}  S: {pose_frenet[0]}")
-        # print(f"X: {vehicle_state[0]}  Y: {vehicle_state[1]}  YAW: {vehicle_state[3]}  EYAW: {pose_frenet[2]}")
-
-        # print(env.sim.agents[0].state[10])
-        # print(env.sim.agents[0].state[3])
-
-        # if len(xcl) == 0:
-        #     xcl.append(vehicle_state)  # add x0 to closed loop trajectory
 
         mean, lower, upper = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
         u = [0.0, 0.0]
@@ -251,6 +235,9 @@ def main():  # after launching this you can run visualization.py to see the resu
         else:
             # print("GP model")
             if gp_mpc_type == 'cartesian':
+
+                print(f"X: {vehicle_state[0]}  Y: {vehicle_state[1]}  YAW: {vehicle_state[3]}")
+
                 u, mpc_ref_path_x, mpc_ref_path_y, mpc_pred_x, mpc_pred_y, mpc_ox, mpc_oy = planner_gp_mpc.plan(
                     vehicle_state)
                 u[0] = u[0] / planner_gp_mpc.config.MASS  # Force to acceleration
@@ -267,6 +254,8 @@ def main():  # after launching this you can run visualization.py to see the resu
                                                                          np.array([mpc_ref_path_x[0:2], mpc_ref_path_y[0:2]]).T)
             elif gp_mpc_type == 'frenet':
                 pose_frenet = track.cartesian_to_frenet(np.array([vehicle_state[0], vehicle_state[1], vehicle_state[3]]))  # np.array([x,y,yaw])
+            
+                print(f"X: {vehicle_state[0]}  Y: {vehicle_state[1]}  S: {pose_frenet[0]}")
 
                 vehicle_state_frenet = np.array([pose_frenet[0],  # s
                                                  pose_frenet[1],  # ey
@@ -277,14 +266,11 @@ def main():  # after launching this you can run visualization.py to see the resu
                                                  env.sim.agents[0].state[2],  # steering angle
                                                  ])
 
-                u, mpc_ref_path_s, mpc_ref_path_ey, mpc_pred_s, mpc_pred_ey, mpc_os, mpc_oey = planner_gp_mpc_frenet.plan(
+                u, mpc_ref_path_s, mpc_ref_path_ey, mpc_pred_s, mpc_pred_ey, mpc_os, mpc_oey = planner_gp_mpc.plan(
                     vehicle_state_frenet)
 
-                u[0] = u[0] / planner_gp_mpc_frenet.config.MASS  # Force to acceleration
+                u[0] = u[0] / planner_gp_mpc.config.MASS  # Force to acceleration
 
-                # if waypoints[:, 5][0] <= 5.5:
-                #     u[0] += np.random.randn(1)[0] * 0.000005
-                #     u[1] += np.random.randn(1)[0] * 0.0005
                 mpc_ref_path_x = np.zeros(mpc_ref_path_s.shape)
                 mpc_ref_path_y = np.zeros(mpc_ref_path_s.shape)
                 mpc_pred_x = np.zeros(mpc_ref_path_s.shape)
@@ -302,12 +288,10 @@ def main():  # after launching this you can run visualization.py to see the resu
                 draw.reference_traj_show = np.array([mpc_ref_path_x, mpc_ref_path_y]).T
                 draw.predicted_traj_show = np.array([mpc_pred_x, mpc_pred_y]).T
 
-                # _, tracking_error, _, _, _ = nearest_point_on_trajectory(np.array([mpc_pred_x[0], mpc_pred_y[0]]),
-                #                                                          np.array([mpc_ref_path_x[0:2], mpc_ref_path_y[0:2]]).T)
+                _, tracking_error, _, _, _ = nearest_point_on_trajectory(np.array([mpc_pred_x[0], mpc_pred_y[0]]),
+                                                                         np.array([mpc_ref_path_x[0:2], mpc_ref_path_y[0:2]]).T)
             else:
                 print("ERROR")
-        # u[0] += np.random.randn(1)[0] * 0.00001
-        # u[1] += np.random.randn(1)[0] * 0.0001
 
         if gp_mpc_type == 'cartesian':
             if gp_model_trained:
@@ -334,15 +318,6 @@ def main():  # after launching this you can run visualization.py to see the resu
                 last_render = 0
                 env.render(mode='human_fast')
         laptime += step_reward
-
-        vehicle_state_next = np.array([env.sim.agents[0].state[0],  # x
-                                       env.sim.agents[0].state[1],  # y
-                                       env.sim.agents[0].state[3],  # vx
-                                       env.sim.agents[0].state[4],  # yaw angle
-                                       env.sim.agents[0].state[10],  # vy
-                                       env.sim.agents[0].state[5],  # yaw rate
-                                       env.sim.agents[0].state[2],  # steering angle
-                                       ]) #+ np.random.randn(7) * 0.00001
 
         if constant_speed:
             if obs['lap_counts'][0] >= 0 and waypoints[:, 5][0] < 18.7:
@@ -375,23 +350,11 @@ def main():  # after launching this you can run visualization.py to see the resu
 
         # learning GPs
         u[0] = u[0] * planner_gp_mpc.config.MASS  # Acceleration to force
-
-        # xcl.append(vehicle_state_next)
-        # ucl.append(u)
-
-        if planner_gp_mpc_frenet.it > 0:
-            planner_gp_mpc_frenet.add_point(vehicle_state, u)
-
-
         gather_data_every = 2
 
         vx_transition = env.sim.agents[0].state[3] + np.random.randn(1)[0] * 0.00001 - vehicle_state[2]
         vy_transition = env.sim.agents[0].state[10] + np.random.randn(1)[0] * 0.00001 - vehicle_state[4]
         yaw_rate_transition = env.sim.agents[0].state[5] + np.random.randn(1)[0] * 0.00001 - vehicle_state[5]
-
-        # print(mean[0] - vx_transition)
-        # print(gather_data_every)
-        # print('V: %f  Vx: %f  Vy: %f ' % (waypoints[:, 5][0], env.sim.agents[0].state[3], env.sim.agents[0].state[10]))
 
         gather_data += 1
         if gather_data >= gather_data_every:
@@ -402,30 +365,8 @@ def main():  # after launching this you can run visualization.py to see the resu
             if gp_mpc_type == 'cartesian':
                 planner_gp_mpc.model.add_new_datapoint(X_sample, Y_sample)
             elif gp_mpc_type == 'frenet':
-                planner_gp_mpc_frenet.model.add_new_datapoint(X_sample, Y_sample)
+                planner_gp_mpc.model.add_new_datapoint(X_sample, Y_sample)
             gather_data = 0
-
-            # log_dataset['X0'].append(float(vehicle_state[2]))
-            # log_dataset['X1'].append(float(vehicle_state[4]))
-            # log_dataset['X2'].append(float(vehicle_state[5]))
-            # log_dataset['X3'].append(float(vehicle_state[6]))
-            # log_dataset['X4'].append(float(u[0]))
-            # log_dataset['X5'].append(float(u[1]))
-            # log_dataset['Y0'].append(float(vx_transition))
-            # log_dataset['Y1'].append(float(vy_transition))
-            # log_dataset['Y2'].append(float(yaw_rate_transition))
-            # log_dataset['X0[t-1]'].append(X_t_1[0])
-            # log_dataset['X1[t-1]'].append(X_t_1[1])
-            # log_dataset['X2[t-1]'].append(X_t_1[2])
-            # log_dataset['X3[t-1]'].append(X_t_1[3])
-            # log_dataset['X4[t-1]'].append(X_t_1[4])
-            # log_dataset['X5[t-1]'].append(X_t_1[5])
-            # log_dataset['Y0[t-1]'].append(X_t_1[6])
-            # log_dataset['Y1[t-1]'].append(X_t_1[7])
-            # log_dataset['Y2[t-1]'].append(X_t_1[8])
-
-        # X_t_1 = [float(vehicle_state[2]), float(vehicle_state[4]), float(vehicle_state[5]), float(vehicle_state[6]), float(u[0]), float(u[1]),
-        #          float(vx_transition), float(vy_transition), float(yaw_rate_transition)]
 
         if obs['lap_counts'][0] - 1 == gp_model_trained:
             # if waypoints[:, 5][0] >= last_speed + 0.25 and False:  # or (waypoints[:, 5][0] > 7.5 and waypoints[:, 5][0] >= last_speed + 0.05) :
@@ -439,8 +380,8 @@ def main():  # after launching this you can run visualization.py to see the resu
                 print(f"{len(planner_gp_mpc.model.x_measurements[0])}")
                 planner_gp_mpc.model.train_gp_min_variance(num_of_new_samples)
             elif gp_mpc_type == 'frenet':
-                print(f"{len(planner_gp_mpc_frenet.model.x_measurements[0])}")
-                planner_gp_mpc_frenet.model.train_gp_min_variance(num_of_new_samples)
+                print(f"{len(planner_gp_mpc.model.x_measurements[0])}")
+                planner_gp_mpc.model.train_gp_min_variance(num_of_new_samples)
 
             print("GP training done")
             print('Model used: GP')
@@ -456,16 +397,6 @@ def main():  # after launching this you can run visualization.py to see the resu
                 log_dataset['Y0'] = planner_gp_mpc.model.y_samples[0]
                 log_dataset['Y1'] = planner_gp_mpc.model.y_samples[1]
                 log_dataset['Y2'] = planner_gp_mpc.model.y_samples[2]
-            elif gp_mpc_type == 'frenet':
-                log_dataset['X0'] = planner_gp_mpc_frenet.model.x_samples[0]
-                log_dataset['X1'] = planner_gp_mpc_frenet.model.x_samples[1]
-                log_dataset['X2'] = planner_gp_mpc_frenet.model.x_samples[2]
-                log_dataset['X3'] = planner_gp_mpc_frenet.model.x_samples[3]
-                log_dataset['X4'] = planner_gp_mpc_frenet.model.x_samples[4]
-                log_dataset['X5'] = planner_gp_mpc_frenet.model.x_samples[5]
-                log_dataset['Y0'] = planner_gp_mpc_frenet.model.y_samples[0]
-                log_dataset['Y1'] = planner_gp_mpc_frenet.model.y_samples[1]
-                log_dataset['Y2'] = planner_gp_mpc_frenet.model.y_samples[2]
 
             with open('log01', 'w') as f:
                 json.dump(log, f)
@@ -489,14 +420,8 @@ def main():  # after launching this you can run visualization.py to see the resu
         json.dump(log_dataset, f)
 
     if SAVE_MODEL:
-        if gp_mpc_type == 'cartesian':
-            save_GP_enemble_model(planner_gp_mpc.model)
-        elif gp_mpc_type == 'frenet':
-            save_GP_enemble_model(planner_gp_mpc_frenet.model)
+        save_GP_enemble_model(planner_gp_mpc.model)
 
 
 if __name__ == '__main__':
     main()
-
-# formula zero paper
-# exp2
