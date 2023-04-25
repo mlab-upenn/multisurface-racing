@@ -68,11 +68,11 @@ class GPEnsembleModel:
 
         # gpytorch.settings.cg_tolerance(0.1)
 
-        self.x_measurements = [[] for i in range(6)]
-        self.y_measurements = [[] for i in range(3)]
+        self.x_measurements = None
+        self.y_measurements = None
 
-        self.x_samples = [[] for i in range(6)]
-        self.y_samples = [[] for i in range(3)]
+        self.x_samples = None
+        self.y_samples = None
 
         self.train_x_scaled = None
         self.train_y_scaled = None
@@ -456,25 +456,15 @@ class GPEnsembleModel:
         :param Y_sample: (np.array) error vector: [vx_error, vy_error, yaw_rate_error]
         :return:
         """
-        X_sample = X_sample.tolist()
-        Y_sample = Y_sample.tolist()
+        if self.x_measurements is None:
+            self.x_measurements = X_sample.copy()
+        else:
+            self.x_measurements = np.vstack((self.x_measurements, X_sample))
 
-        # for i in range(6):
-        #     self.x_measurements[i].append(X_sample[i])
-        #
-        # for i in range(3):
-        #     self.y_measurements[i].append(Y_sample[i])
-
-        self.x_measurements[0].append(X_sample[0])
-        self.x_measurements[1].append(X_sample[1])
-        self.x_measurements[2].append(X_sample[2])
-        self.x_measurements[3].append(X_sample[3])
-        self.x_measurements[4].append(X_sample[4])
-        self.x_measurements[5].append(X_sample[5])
-
-        self.y_measurements[0].append(Y_sample[0])
-        self.y_measurements[1].append(Y_sample[1])
-        self.y_measurements[2].append(Y_sample[2])
+        if self.y_measurements is None:
+            self.y_measurements = Y_sample.copy()
+        else:
+            self.y_measurements = np.vstack((self.y_measurements, Y_sample))
 
     def init_gp(self):
         train_x = torch.tensor([self.x_measurements[k] for k in range(6)])
@@ -727,5 +717,5 @@ class GPEnsembleModel:
             self.trained = True
             print(len(self.x_samples[0]))
 
-        self.x_measurements = [[] for i in range(6)]
-        self.y_measurements = [[] for i in range(3)]
+        self.x_measurements = None
+        self.y_measurements = None
