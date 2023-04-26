@@ -38,6 +38,7 @@ class MPCConfigEXT:
     MAX_DECEL: float = -45.0  # maximum acceleration [m/ss]
 
     MASS: float = 1225.887  # Vehicle mass
+    LMPC_FLAG: bool = False  # LMPC flag
 
 
 @dataclass
@@ -77,6 +78,7 @@ class MPCConfigGP:
     MAX_DECEL: float = -45.0  # maximum acceleration [m/ss]
 
     MASS: float = 1225.887  # Vehicle mass
+    LMPC_FLAG: bool = False  # LMPC flag
 
 
 @dataclass
@@ -116,4 +118,5 @@ class MPCConfigGPFrenet:
     MAX_DECEL: float = -45.0  # maximum acceleration [m/ss]
 
     MASS: float = 1225.887  # Vehicle mass
+    LMPC_FLAG: bool = False  # LMPC flag
 

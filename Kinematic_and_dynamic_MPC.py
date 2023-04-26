@@ -365,7 +365,6 @@ def main():  # after launching this you can run visualization.py to see the resu
 
 
 
-        print('Model used: %s' % model_to_use)
         # Simulation step
         step_reward = 0.0
         for i in range(num_of_sim_steps):

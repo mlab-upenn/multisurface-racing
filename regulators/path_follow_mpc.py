@@ -26,6 +26,15 @@ Dynamic Single Track MPC waypoint tracker
 Author: Tomas Nagy, Hongrui Zheng, Johannes Betz, Ahmad Amine
 Last Modified: 8/1/22
 """
+
+# TODO change xLin to correct variable
+# TODO Reformulate OSQP optimization to CVXPY
+# TODO Change OSQP optimization from min-time to min-time + tracking
+# TODO Store GP covariance in safe set
+# TODO Add covariance minimization to optimization problem
+# TODO DEBUG
+# TODO Cleanup + Rewrite
+
 import time
 from dataclasses import dataclass, field
 import cvxpy
@@ -35,6 +44,18 @@ from scipy.sparse import block_diag, csc_matrix, diags
 from numba import njit
 import copy
 
+import pdb
+import numpy as np
+from cvxopt import spmatrix, matrix, solvers
+from numpy import linalg as la
+from scipy import linalg
+from scipy import sparse
+from cvxopt.solvers import qp
+import datetime
+from numpy import hstack, inf, ones
+from scipy.sparse import vstack
+from osqp import OSQP
+from dataclasses import dataclass, field
 
 @njit(cache=True)
 def nearest_point(point, trajectory):
@@ -102,7 +123,7 @@ class STMPCPlanner:
         self.oa = np.NAN
         self.origin_switch = 1
         self.init_flag = 0
-        self.mpc_prob_init()
+        self.mpc_prob_init(config.LMPC_FLAG)
         self.solve_time = time.time()
 
         self.track_length = 100.0
@@ -112,15 +133,41 @@ class STMPCPlanner:
         # safe set
         self.SS_frenet = []  # safe set (states) Going to be used to calculate safe set every iteration
         self.SS_cartesian = []  # safe set (states) Going to be used to recalculate self.SS_frenet and costs in case of change of the reference traj
+        self.SS_covariance = [] # safe set (covariance) Going to be used for covariance minimization and model exploration
         self.uSS = []  # safe set (inputs)
         self.Qfinal_speed = []  # final cost approximation for speed
         self.Qfinal_tracking = []  # final cost approximation
         self.it = 0  # LMPC iteration
         self.LapTimes = []
         self.zt = np.array([0.0, 0.0, 5.0, 0.0, 0.0, 0.0, 0.0])
+        self.time_step = 0
+        self.tracking_accumulated_cost = 0
 
         self.mpc_tracking_weight = 0
         self.mpc_speed_opt_weight = 0
+
+    def addSafeSetIneqConstr(self):
+        # Add positiviti constraints for lambda_{SafeSet}. Note that no constraint is enforced on slack_{SafeSet} ---> add np.hstack(-np.eye(self.numSS_Points), np.zeros(self.n)) 
+        self.F_FTOCP = sparse.csc_matrix( linalg.block_diag( self.F, np.hstack((-np.eye(self.numSS_Points), np.zeros((self.numSS_Points, self.n)))) ) )
+        self.b_FTOCP = np.append(self.b, np.zeros(self.numSS_Points))
+    
+    def addSafeSetEqConstr(self):
+        # Add constrains for x, u, slack
+        xTermCons = np.zeros((self.n, self.G.shape[1]))
+        xTermCons[:, self.N * self.n:(self.N + 1) * self.n] = np.eye(self.n)
+        G_x_u_slack = np.vstack((self.G, xTermCons))
+        # Constraint for lambda_{SaFeSet, slack_{safeset}} to enforce safe set
+        G_lambda_slackSafeSet = np.vstack( (np.zeros((self.G.shape[0], self.SS_PointSelectedTot.shape[1] + self.n)), np.hstack((-self.SS_PointSelectedTot, np.eye(self.n)))) )
+        # Constraints on lambda = 1
+        G_lambda = np.append(np.append(np.zeros(self.G.shape[1]), np.ones(self.SS_PointSelectedTot.shape[1])), np.zeros(self.n))
+        # Put all together
+        self.G_FTOCP = sparse.csc_matrix(np.vstack((np.hstack((G_x_u_slack, G_lambda_slackSafeSet)), G_lambda)))
+        self.E_FTOCP = np.vstack((self.E, np.zeros((self.n+1,self.n)))) # adding n for terminal constraint and 1 for lambda = 1
+        self.L_FTOCP = np.append(np.append(self.L, np.zeros(self.n)), 1)
+
+    def feasibleStateInput(self):
+        self.zt = np.dot(self.Succ_SS_PointSelectedTot, self.lambd)
+        self.zt_u = np.dot(self.Succ_uSS_PointSelectedTot, self.lambd)
 
     def plan(self, states, waypoints=None):
         """
@@ -224,7 +271,7 @@ class STMPCPlanner:
         # speeds = (speeds_ref + speed) / 2.0
 
         if self.trajectry_interpolation == 0:
-            # TODO curently only for cartesian frame
+            # TODO TOMAS curently only for cartesian frame
             # Find nearest index/setpoint from where the trajectories are calculated
             _, dist, _, _, ind = nearest_point(np.array([position[0], position[1]]), path[:, (1, 2)])
             # path[:, 5]
@@ -238,8 +285,8 @@ class STMPCPlanner:
 
             reference[2] = np.where(reference[2] - speed > 5.0, speed + 5.0, reference[2])
         elif self.trajectry_interpolation == 1:
-            # TODO curently only for frenet frame
-            # TODO calculate ref speed in better way -- speed_ref[i + 1] = speed is not accurate approximation for linearization point
+            # TODO TOMAS curently only for frenet frame
+            # TODO TOMAS calculate ref speed in better way -- speed_ref[i + 1] = speed is not accurate approximation for linearization point
 
             position_ref = np.zeros((self.config.TK + 1, 2))
             speed_ref = np.zeros(self.config.TK + 1)
@@ -255,36 +302,55 @@ class STMPCPlanner:
 
         return reference, 0
 
-    def compute_speed_cost(self, x, u):
+    def compute_speed_cost(self, x, u, speed_cost=False):
+        """
+        :param x: vector of states
+        :param u: vecotr of control inputs
+
+        :return: list of accumulated minimum-time costs
+        """
+
+        cost = np.zeros(len(x))
         # Compute the cost in a DP like strategy: start from the last point x[len(x)-1] and move backwards
         for i in range(0, len(x)):
+            idx = len(x) - 1 - i
             if i == 0:
-                cost = [0]
+                cost[0] = 0
+            elif idx == 0:
+                cost[i] = (1 +  + cost[i-1] + speed_cost*(np.dot(np.dot(u[idx], self.config.Rk), u[idx])))
             else:
-                cost.append(cost[-1] + 1)
+                cost[i] = cost[i-1] + 1 + speed_cost*(np.dot(np.dot(u[idx], self.config.Rk), u[idx]) + \
+                                                      np.dot(np.dot(u[idx] - u[idx - 1], self.config.Rdk), u[idx] - u[idx - 1]))
 
         # Finally flip the cost to have correct order
         return np.flip(cost).tolist()
 
     def compute_tracking_cost(self, x, u):
+        """
+        :param x: vector of states
+        :param u: vecotr of control inputs
+
+        :return: list of accumulated tracking costs
+        """
+
+        cost = np.zeros(len(x))
         # Compute the cost in a DP like strategy: start from the last point x[len(x)-1] and move backwards
         for i in range(0, len(x)):
             idx = len(x) - 1 - i
             if i == 0:
-                cost = [np.dot(np.dot(x[idx], self.config.Qk), x[idx])]  # Last element (finish line)
+                cost[0] = np.dot(np.dot(x[idx], self.config.Qk), x[idx])  # Last element (finish line)
             elif idx == 0:
-                cost.append(np.dot(np.dot(x[idx], self.config.Qk), x[idx]) + np.dot(np.dot(u[idx], self.config.Rk), u[idx]) + cost[-1])
+                cost[i] = (np.dot(np.dot(x[idx], self.config.Qk), x[idx]) + np.dot(np.dot(u[idx], self.config.Rk), u[idx]) + cost[i-1])
             else:
-                #                                  tracking error                             input cost                                      input difference                               prev cost
-                cost.append(np.dot(np.dot(x[idx], self.config.Qk), x[idx]) + np.dot(np.dot(u[idx], self.config.Rk), u[idx]) + np.dot(
-                    np.dot(u[idx] - u[idx - 1], self.config.Rdk), u[idx] - u[idx - 1]) + cost[-1])
+                #         prev cost                  tracking error                             input cost                                      input difference                               
+                cost[i] = cost[i-1] + np.dot(np.dot(x[idx], self.config.Qk), x[idx]) + np.dot(np.dot(u[idx], self.config.Rk), u[idx]) + np.dot(np.dot(u[idx] - u[idx - 1], self.config.Rdk), u[idx] - u[idx - 1])
 
         # Finally flip the cost to have correct order
         return np.flip(cost).tolist()
 
     def add_safe_trajectory(self, x, u):
 
-        self.LapTimes.append(x.shape[0])
+        self.LapTimes.append(len(x))
         # Add the feasible trajectory x and the associated input sequence u to the safe set
         self.SS_cartesian.append(copy.copy(x))
 
@@ -293,14 +359,15 @@ class STMPCPlanner:
             pose_frenet = self.track.cartesian_to_frenet(np.array([state[0], state[1], state[3]]))
             x_frenet.append(np.array([pose_frenet[0], pose_frenet[1], state[2], pose_frenet[2], state[4], state[5], state[6]]))
 
+
         self.SS_frenet.append(copy.copy(x_frenet))
         self.uSS.append(copy.copy(u))
 
         # Compute and store the cost associated with the feasible trajectory
-        cost = self.compute_speed_cost(x, u)
+        cost = self.compute_speed_cost(x_frenet, u)
         self.Qfinal_speed.append(cost)  # final cost approximation for speed
 
-        cost = self.compute_tracking_cost(x, u)
+        cost = self.compute_tracking_cost(x_frenet, u)
         self.Qfinal_tracking.append(cost)  # final cost approximation for tracking
 
         # Initialize zVector
@@ -308,51 +375,107 @@ class STMPCPlanner:
 
         # Augment iteration counter and print the cost of the trajectories stored in the safe set
         self.it = self.it + 1
+        self.time_step = 0
+        self.tracking_accumulated_cost = 0
         print("Trajectory added to the Safe Set. Current Iteration: ", self.it)
         print("Performance stored trajectories: \n", [self.Qfinal_speed[i][0] for i in range(0, self.it)])
 
-    def calc_safe_set_components(self):
+    def calc_safe_set_components(self, x0, xPred, uPred):
+        """
+        Calculates safe set components that will be used for MPC problem.
+
+        :param x0: Current state
+        :param xPred: Open-loop states over control horizon from MPC solver
+        :param uPred: Open-loop control inputs over control horizon from MPC solver
+        """
+
         # Update zt and xLin is they have crossed the finish line. We want s \in [0, TrackLength]
-        # TODO after understanding what it is
+        if (self.zt[0] - x0[0] > self.track_length / 2):
+            self.zt[0] = np.max([self.zt[0] - self.track_length, 0])
+            self.xLin[0, -1] = self.xLin[0, -1] - self.track_length  # TODO change xLin to correct variable
 
         # sort trajectories by time to construct safe set only from the best possible laps
         sortedLapTime = np.argsort(np.array(self.LapTimes))
 
         # Select Points from historical data. These points will be used to construct the terminal cost function and constraint set
-        # TODO change for our problem
-        # SS_PointSelectedTot = np.empty((self.n, 0))
-        # Succ_SS_PointSelectedTot = np.empty((self.n, 0))
-        # Succ_uSS_PointSelectedTot = np.empty((self.d, 0))
-        # Qfun_SelectedTot = np.empty((0))
+        SS_PointSelectedTot = np.empty((self.config.NXK, 0))
+        Succ_SS_PointSelectedTot = np.empty((self.config.NXK, 0))
+        Succ_uSS_PointSelectedTot = np.empty((self.config.NXK, 0))
+        Qfun_speed_SelectedTot = np.empty((0))
+        Qfun_track_SelectedTot = np.empty((0))
 
         self.numSS_it = 4
         self.numSS_Points = 12 * self.numSS_it
 
         for traj_idx in sortedLapTime[0:self.numSS_it]:  # from zero to N trajectories to compute SS with
-            SS_PointSelected, uSS_PointSelected, Qfun_Selected = self.select_points(traj_idx, self.zt, self.numSS_Points / self.numSS_it + 1)
+            SS_PointSelected, uSS_PointSelected, Qfun_speed_Selected, Qfun_track_Selected = self.select_points(traj_idx, self.zt,
+                                                                                                               self.numSS_Points / self.numSS_it + 1, xPred, uPred)
 
-    def select_points(self, traj_idx, zt, num_points):
+            Succ_SS_PointSelectedTot = np.append(Succ_SS_PointSelectedTot, SS_PointSelected[:, 1:], axis=1)
+            Succ_uSS_PointSelectedTot = np.append(Succ_uSS_PointSelectedTot, uSS_PointSelected[:, 1:], axis=1)
+            SS_PointSelectedTot = np.append(SS_PointSelectedTot, SS_PointSelected[:, 0:-1], axis=1)
+            Qfun_speed_SelectedTot = np.append(Qfun_speed_Selected, Qfun_speed_SelectedTot[0:-1], axis=0)
+            Qfun_track_SelectedTot = np.append(Qfun_track_Selected, Qfun_track_SelectedTot[0:-1], axis=0)
+
+        self.Succ_SS_PointSelectedTot = Succ_SS_PointSelectedTot
+        self.Succ_uSS_PointSelectedTot = Succ_uSS_PointSelectedTot
+        self.SS_PointSelectedTot = SS_PointSelectedTot
+        self.Qfun_speed_SelectedTot = Qfun_speed_SelectedTot
+        self.Qfun_track_SelectedTot = Qfun_track_SelectedTot
+
+        # Update terminal set and cost
+        self.addSafeSetEqConstr()
+        self.addSafeSetCost()
+
+    def select_points(self, traj_idx, zt, num_points, xPred, uPred):
+        '''
+        Selects num_points samples from the traj_idx trajectory based on the num_points closest points to zt
+        :param traj_idx: index of trajectory to select from
+        :param zt: Expected end state
+        :param num_points: Number of points to approximate safe set with
+        :param xPred: The open-loop states along the control horizon from the MPC solution
+        :param uPred: The open-loop control inputs from the MPC solution
+
+        :return: SS_Points, the states of the chosen points of the safe set
+                 SSu_Points, the control inputs of the chosen points of the safe set
+                 Sel_Qfun_speed, the speed (minimum time) cost of the chosen points of the safe set
+                 Sel_Qfun_track, the tracking cost of the chosen points of the safe set
+        '''
+
+        # DONE FOR NOW, DEBUG FOREVER
         x = self.SS_frenet[traj_idx]
         u = self.uSS[traj_idx]
 
         # Find the closest state between state zt and a last few runs
-        oneVec = np.ones((x.shape[0], 1))
-        x0Vec = (np.dot(np.array([zt]).T, oneVec.T)).T  # zt vector;  TODO zt ?? zt -> Global target??
-        diff = x - x0Vec
-        norm = np.linalg.norm(diff, 1, axis=1)
-        MinNorm = np.argmin(norm)
+        MinNorm = np.argmin(np.linalg.norm(x - zt, 1, axis=1))
 
         if (MinNorm - num_points / 2 >= 0):
-            indexSSandQfun = range(-int(num_points / 2) + MinNorm, int(num_points / 2) + MinNorm + 1)
+            indexSSandQfun = np.arange(-int(num_points / 2) + MinNorm, int(num_points / 2) + MinNorm + 1)
         else:
-            indexSSandQfun = range(MinNorm, MinNorm + int(num_points))
+            indexSSandQfun = np.arange(MinNorm, MinNorm + int(num_points))
 
         SS_Points = x[indexSSandQfun, :].T
         SSu_Points = u[indexSSandQfun, :].T
-        Sel_Qfun = self.Qfinal_speed[traj_idx][indexSSandQfun]  # TODO test if this still works
-        Sel_Qfun = self.Qfinal_tracking[traj_idx][indexSSandQfun]  # TODO test if this still works
 
-        return 0, 0, 0
+        # Modify the cost if the predicion has crossed the finisch line
+        if xPred == [] or (np.all((xPred[:, 0] > self.track_length) == False)):
+            Sel_Qfun_speed = self.Qfinal_speed[traj_idx][indexSSandQfun]
+            Sel_Qfun_track = self.Qfinal_tracking[traj_idx][indexSSandQfun]
+        elif traj_idx < self.it - 1:  # Going through the finish line
+            Sel_Qfun_speed = self.Qfinal_speed[traj_idx][indexSSandQfun] + self.Qfinal_speed[traj_idx][0]
+            Sel_Qfun_track = self.Qfinal_tracking[traj_idx][indexSSandQfun] + self.Qfinal_tracking[traj_idx][0]
+        else:  # Going through the finish line and did not finish the second lap
+            sPred = xPred[:, 0]
+            predCurrLap = self.config.TK - sum(sPred > self.track_length)
+            currLapTime = self.time_step
+            curr_tracking_cost = self.tracking_accumulated_cost
+            pred_tracking_cost = self.compute_tracking_cost(xPred[sPred <= self.track_length, :], uPred[sPred <= self.track_length])[0] # SHOULD BE SUM TO N OF XQX + URU
+            # Sel_Qfun = self.Qfun[traj_idx][indexSSandQfun] + currLapTime + predCurrLap
+            Sel_Qfun_speed = self.Qfinal_speed[traj_idx][indexSSandQfun] + currLapTime + predCurrLap  # this is not good enough approximation
+            Sel_Qfun_track = self.Qfinal_tracking[traj_idx][indexSSandQfun] + curr_tracking_cost + pred_tracking_cost  # this is not good enough approximation
+            #       X      =                      h(x)(it)                  +         H(x)       +      (N-OVER)
+
+        return SS_Points, SSu_Points, Sel_Qfun_speed, Sel_Qfun_track
 
     def add_point(self, x, u):
         """at iteration j add the current point to SS, uSS and Qfun of the previous iteration
@@ -379,7 +502,7 @@ class STMPCPlanner:
         # The above two lines are needed as the once the predicted trajectory has crossed the finish line the goal is
         # to reach the end of the lap which is about to start
 
-    def mpc_prob_init(self):
+    def mpc_prob_init(self, LMPC_flag=False):
         """
         Create MPC quadratic optimization problem using cvxpy, solver: OSQP
         Will be solved every iteration for control.
@@ -399,6 +522,11 @@ class STMPCPlanner:
             (self.config.NU, self.config.TK)
         )  # Control Input vector
         objective = 0.0  # Objective value of the optimization problem, set to zero
+
+        tracking_cost = 0.0  # Tracking cost of the optimization problem, set to zero
+        if LMPC_flag:
+            minimum_time_cost = 0.0  # Minimum time cost of the optimization problem, set to zero
+
         constraints = []  # Create constraints array
 
         # Initialize reference vectors
@@ -420,21 +548,57 @@ class STMPCPlanner:
         Q_block.append(self.config.Qfk)
         Q_block = block_diag(tuple(Q_block))
 
+        if LMPC_flag:
+            # Initializes lambda decision vectors of the form of λ.T = [λ, λ, ..., λ] (NUM_SS_POINTS, 1)
+            self.lambda_fk = cvxpy.Variable(
+                (self.config.NUM_SS_POINTS, 1)
+            )  # Lambda vector for safe set termination
+            
+            # Initialize weighting for each cost function
+            self.weight_tracking = cvxpy.Parameter(nonneg=True)
+            self.weight_tracking.value = 1.0
+            self.weight_minimum_time = cvxpy.Parameter(nonneg=True)
+            self.weight_minimum_time.value = 0.0
+
+            # Initialize Safe Set parameters
+            self.xSS = cvxpy.Parameter((self.config.NUM_SS_POINTS, self.config.NXK))
+            self.xSS.value = np.zeros((self.config.NUM_SS_POINTS, self.config.NXK))
+            self.vSS = cvxpy.Parameter((self.config.NUM_SS_POINTS))
+            self.vSS.value = np.zeros((self.config.NUM_SS_POINTS))
+        
         # Formulate and create the finite-horizon optimal control problem (objective function)
         # The FTOCP has the horizon of T timesteps
 
         # Goal 1: Follow trajectory MPC
 
         # Objective 1: Influence of the control inputs: Inputs u multiplied by the penalty R
-        objective += cvxpy.quad_form(cvxpy.vec(self.uk), R_block)
+        tracking_cost += cvxpy.quad_form(cvxpy.vec(self.uk), R_block)
 
         # Objective 2: Deviation of the vehicle from the reference trajectory weighted by Q, including final Timestep T weighted by Qf
-        objective += cvxpy.quad_form(cvxpy.vec(self.xk - self.ref_traj_k), Q_block)
+        tracking_cost += cvxpy.quad_form(cvxpy.vec(self.xk - self.ref_traj_k), Q_block)
 
         # Objective 3: Difference from one control input to the next control input weighted by Rd
-        objective += cvxpy.quad_form(cvxpy.vec(cvxpy.diff(self.uk, axis=1)), Rd_block)
+        tracking_cost += cvxpy.quad_form(cvxpy.vec(cvxpy.diff(self.uk, axis=1)), Rd_block)
 
-        # Goal 2: Go as fast as possible
+        if LMPC_flag:
+            # Objective 4: Add safe set terminal cost
+            tracking_cost += self.lambda_fk.T @ self.vSS
+
+            # Goal 2: Go as fast as possible
+            # Objective 1: Influence of the control inputs: Inputs u multiplied by the penalty R
+            minimum_time_cost += cvxpy.quad_form(cvxpy.vec(self.uk), R_block)
+
+            # Objective 2: Difference from one control input to the next control input weighted by Rd
+            minimum_time_cost += cvxpy.quad_form(cvxpy.vec(cvxpy.diff(self.uk, axis=1)), Rd_block)
+
+            # Objective 3: Add safe set terminal cost
+            minimum_time_cost += self.lambda_fk.T @ self.vSS
+
+        if LMPC_flag:
+            # Total Goal: Minimize tracking cost and maximize speed
+            objective = (self.weight_tracking) * tracking_cost + (self.weight_minimum_time) * minimum_time_cost
+        else:
+            objective = tracking_cost
 
         # Constraints 1: Calculate the future vehicle behavior/states based on the vehicle dynamics model matrices
         # Evaluate vehicle Dynamics for next T timesteps
@@ -484,27 +648,35 @@ class STMPCPlanner:
         self.Ck_.value = C_block
 
         # Add dynamics constraints to the optimization problem
-        constraints += [
+        constraints.append(
             cvxpy.vec(self.xk[:, 1:])
             == self.Ak_ @ cvxpy.vec(self.xk[:, :-1])
             + self.Bk_ @ cvxpy.vec(self.uk)
             + (self.Ck_)
-        ]
+        )
 
         # Set x[k=0] as x0
-        constraints += [self.xk[:, 0] == self.x0k]
+        constraints.append(self.xk[:, 0] == self.x0k)
 
         # Create the constraints (upper and lower bounds of states and inputs) for the optimization problem
         state_constraints, input_constraints, input_diff_constraints = self.model.get_model_constraints()
 
         for i in range(self.config.NXK):
-            constraints += [state_constraints[0, i] <= self.xk[i, :], self.xk[i, :] <= state_constraints[1, i]]
+            constraints.append(state_constraints[0, i] <= self.xk[i, :])
+            constraints.append(self.xk[i, :] <= state_constraints[1, i])
 
         for i in range(self.config.NU):
-            constraints += [input_constraints[0, i] <= self.uk[i, :], self.uk[i, :] <= input_constraints[1, i]]
-            constraints += [input_diff_constraints[0, i] <= cvxpy.diff(self.uk[i, :]),
-                            cvxpy.diff(self.uk[i, :]) <= input_diff_constraints[1, i]]
-
+            constraints.append(input_constraints[0, i] <= self.uk[i, :])
+            constraints.append(self.uk[i, :] <= input_constraints[1, i])
+            constraints.append(input_diff_constraints[0, i] <= cvxpy.diff(self.uk[i, :]))
+            constraints.append(cvxpy.diff(self.uk[i, :]) <= input_diff_constraints[1, i])
+            
+        if LMPC_flag:
+            # Add safe set constraint
+            constraints.append(self.lambda_fk >= 0)
+            constraints.append(cvxpy.sum(self.lambda_fk) == 1)
+            constraints.append(cvxpy.vec(self.lambda_fk.T @ self.xSS) == self.xk[:, -1])
+    
         # Create the optimization problem in CVXPY and setup the workspace
         # Optimization goal: minimize the objective function
         self.MPC_prob = cvxpy.Problem(cvxpy.Minimize(objective), constraints)
@@ -529,6 +701,7 @@ class STMPCPlanner:
         # self.MPC_prob.solve(solver=cvxpy.OSQP, verbose=False, warm_start=True)
         self.MPC_prob.solve(solver=cvxpy.OSQP, polish=True, adaptive_rho=True, rho=0.01, eps_abs=0.0005, eps_rel=0.0005, verbose=False,
                             warm_start=True)
+
         # time_end = time.time()
         # print(f'Solving time = {time_end - time_start}')
         # self.solve_time = time_end - time_start
@@ -540,6 +713,9 @@ class STMPCPlanner:
         else:
             print("Error: Cannot solve KS mpc... Status : ", self.MPC_prob.status)
             ou, o_states = np.zeros(self.config.NU) * np.NAN, np.zeros(self.config.NXK) * np.NAN
+
+        self.time_step += 1
+        self.tracking_accumulated_cost += self.compute_tracking_cost((x0 - ref_traj[:,0]).reshape(1,-1), ou[:,0])[-1]
 
         return ou, o_states
 

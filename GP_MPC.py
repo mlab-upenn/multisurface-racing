@@ -20,11 +20,15 @@ from helpers.draw_debug import DrawDebug
 from helpers.utils import save_GP_enemble_model
 import copy
 import json
+import logging
+from helpers.logging import create_logger
 
 def main():  # after launching this you can run visualization.py to see the results
     """
     main entry point
     """
+    main_logger = create_logger('main', logging.DEBUG)
+    main_logger.info('Starting main')
 
     # Program parameters
     model_in_first_lap = 'ext_kinematic'  # options: ext_kinematic, pure_pursuit
@@ -76,18 +80,18 @@ def main():  # after launching this you can run visualization.py to see the resu
         #                                   [0.0, -1 / 25, 0.0, -1/25, 0.0],
         #                                   [np.pi, np.pi, 0.0, 0.0, np.pi]]).T
 
-        # centerline_descriptor = np.array([[0.0, 25 * np.pi, 25 * np.pi + 25, 25 * (3.0 * np.pi / 2.0) + 25, 25 * (3.0 * np.pi / 2.0) + 50,
-        #                                    25 * (2.0 * np.pi + np.pi / 2.0) + 50, 25 * (2.0 * np.pi + np.pi / 2.0) + 125, 25 * (3.0 * np.pi) + 125,
-        #                                    25 * (3.0 * np.pi) + 200],
-        #                                   [0.0, 0.0, -25.0, -50.0, -50.0, -100.0, -100.0, -75.0, 0.0],
-        #                                   [0.0, 50.0, 50.0, 75.0, 100.0, 100.0, 25.0, 0.0, 0.0],
-        #                                   [1 / 25, 0.0, -1 / 25, 0.0, 1 / 25, 0.0, 1 / 25, 0.0, 1/25],
-        #                                   [0.0, np.pi, np.pi, np.pi / 2.0, np.pi / 2.0, 3.0 * np.pi / 2.0, 3.0 * np.pi / 2.0, 0.0, 0.0]]).T
+        centerline_descriptor = np.array([[0.0, 25 * np.pi, 25 * np.pi + 25, 25 * (3.0 * np.pi / 2.0) + 25, 25 * (3.0 * np.pi / 2.0) + 50,
+                                           25 * (2.0 * np.pi + np.pi / 2.0) + 50, 25 * (2.0 * np.pi + np.pi / 2.0) + 125, 25 * (3.0 * np.pi) + 125,
+                                           25 * (3.0 * np.pi) + 200],
+                                          [0.0, 0.0, -25.0, -50.0, -50.0, -100.0, -100.0, -75.0, 0.0],
+                                          [0.0, 50.0, 50.0, 75.0, 100.0, 100.0, 25.0, 0.0, 0.0],
+                                          [1 / 25, 0.0, -1 / 25, 0.0, 1 / 25, 0.0, 1 / 25, 0.0, 1/25],
+                                          [0.0, np.pi, np.pi, np.pi / 2.0, np.pi / 2.0, 3.0 * np.pi / 2.0, 3.0 * np.pi / 2.0, 0.0, 0.0]]).T
 
-        print(centerline_descriptor)
-        print(centerline_descriptor.shape)
+        main_logger.debug(centerline_descriptor)
+        main_logger.debug(centerline_descriptor.shape)
 
-        track = Track(centerline_descriptor=centerline_descriptor, track_width=10.0, reference_speed=5.0)
+        track = Track(centerline_descriptor=centerline_descriptor, track_width=10.0, reference_speed=5.0, log_level=0)
         waypoints = track.get_reference_trajectory()
     # waypoints[:, 3] += 1.5707963268
 
@@ -175,12 +179,15 @@ def main():  # after launching this you can run visualization.py to see the resu
     gather_data = 0
     logged_data = 0
 
-    print('Model used: %s' % model_in_first_lap)
+    main_logger.info('Model used: %s' % model_in_first_lap)
 
     original_vel_profile = copy.deepcopy(waypoints[:, 5])
     
+    xcl = []
+    ucl = []
     laps_done = 0
 
+    laps_before_LMPC = 5
     while not done:
 
         # Regulator step MPC
@@ -193,13 +200,16 @@ def main():  # after launching this you can run visualization.py to see the resu
                                   env.sim.agents[0].state[2],  # steering angle
                                   ])  # + np.random.randn(7) * 0.00001
 
+
+        xcl.append(vehicle_state)  # add x0 to closed loop trajectory
+
         mean, lower, upper = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
         u = [0.0, 0.0]
         tracking_error = 0.0
         total_var = 0.0
 
         if gp_model_trained <= 1:
-            print("Initial model")
+            main_logger.debug("Initial model")
             # if True:
             if model_in_first_lap == 'pure_pursuit':
                 # Regulator step pure pursuit
@@ -233,7 +243,7 @@ def main():  # after launching this you can run visualization.py to see the resu
                 u[1] += np.random.randn(1)[0] * 0.01
 
         else:
-            # print("GP model")
+            # main_logger.debug("GP model")
             if gp_mpc_type == 'cartesian':
 
                 print(f"X: {vehicle_state[0]}  Y: {vehicle_state[1]}  YAW: {vehicle_state[3]}")
@@ -291,12 +301,13 @@ def main():  # after launching this you can run visualization.py to see the resu
                 _, tracking_error, _, _, _ = nearest_point_on_trajectory(np.array([mpc_pred_x[0], mpc_pred_y[0]]),
                                                                          np.array([mpc_ref_path_x[0:2], mpc_ref_path_y[0:2]]).T)
             else:
-                print("ERROR")
+                main_logger.error("GP MPC type not supported!")
+        # u[0] += np.random.randn(1)[0] * 0.00001
+        # u[1] += np.random.randn(1)[0] * 0.0001
 
-        if gp_mpc_type == 'cartesian':
-            if gp_model_trained:
-                with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                    mean, lower, upper = planner_gp_mpc.model.scale_and_predict_model_step(vehicle_state, [u[0] * planner_gp_mpc.config.MASS, u[1]])
+        if gp_model_trained:
+            with torch.no_grad(), gpytorch.settings.fast_pred_var():
+                mean, lower, upper = planner_gp_mpc.model.scale_and_predict_model_step(vehicle_state, [u[0] * planner_gp_mpc.config.MASS, u[1]])
 
         # set correct friction to the environment
         if use_dyn_friction:
@@ -350,6 +361,10 @@ def main():  # after launching this you can run visualization.py to see the resu
 
         # learning GPs
         u[0] = u[0] * planner_gp_mpc.config.MASS  # Acceleration to force
+
+        # Add to safe set
+        ucl.append(u)
+
         gather_data_every = 2
 
         vx_transition = env.sim.agents[0].state[3] + np.random.randn(1)[0] * 0.00001 - vehicle_state[2]
@@ -370,15 +385,15 @@ def main():  # after launching this you can run visualization.py to see the resu
             last_speed = waypoints[:, 5][0]
 
             gp_model_trained += 1
-            print("GP training...")
+            main_logger.debug("GP training...")
             num_of_new_samples = 250
 
             print(f"{len(planner_gp_mpc.model.x_measurements[0])}")
             planner_gp_mpc.model.train_gp_min_variance(num_of_new_samples)
 
-            print("GP training done")
-            print('Model used: GP')
-            print('Reference speed: %f' % waypoints[:, 5][0])
+            main_logger.debug("GP training done")
+            main_logger.debug('Model used: GP')
+            main_logger.debug('Reference speed: %f' % waypoints[:, 5][0])
 
             if gp_mpc_type == 'cartesian':
                 log_dataset['X0'] = planner_gp_mpc.model.x_samples[0]
@@ -397,13 +412,22 @@ def main():  # after launching this you can run visualization.py to see the resu
                 json.dump(log_dataset, f)
 
         if obs['lap_counts'][0] - 1 == laps_done:
+            planner_gp_mpc.add_safe_trajectory(xcl, ucl)
+            xcl = []
+            ucl = []
             laps_done += 1
-            print("Now")
+            main_logger.debug('%d Laps Done' % laps_done)
 
+        if obs['lap_counts'][0] == laps_before_LMPC:
+            planner_gp_mpc.config.LMPC_FLAG = True
+
+            # Re-initialize the MPC problem with the new LMPC flag
+            planner_gp_mpc.mpc_prob_init()
+            
         if obs['lap_counts'][0] == number_of_laps:
             done = 1
 
-    print('Sim elapsed time:', laptime, 'Real elapsed time:', time.time() - start)
+    main_logger.info('Sim elapsed time:', laptime, 'Real elapsed time:', time.time() - start)
     with open('log01', 'w') as f:
         json.dump(log, f)
     with open('log_dataset', 'w') as f:
