@@ -311,16 +311,20 @@ class STMPCPlanner:
         """
 
         cost = np.zeros(len(x))
-        # Compute the cost in a DP like strategy: start from the last point x[len(x)-1] and move backwards
-        for i in range(0, len(x)):
-            idx = len(x) - 1 - i
-            if i == 0:
-                cost[0] = 0
-            elif idx == 0:
-                cost[i] = (1 +  + cost[i-1] + speed_cost*(np.dot(np.dot(u[idx], self.config.Rk), u[idx])))
-            else:
-                cost[i] = cost[i-1] + 1 + speed_cost*(np.dot(np.dot(u[idx], self.config.Rk), u[idx]) + \
-                                                      np.dot(np.dot(u[idx] - u[idx - 1], self.config.Rdk), u[idx] - u[idx - 1]))
+        if speed_cost == True:
+            # Compute the cost in a DP like strategy: start from the last point x[len(x)-1] and move backwards
+            for i in range(0, len(x)):
+                idx = len(x) - 1 - i
+                if i == 0:
+                    cost[0] = 0
+                elif idx == 0:
+                    cost[i] = (1 +  + cost[i-1] + (np.dot(np.dot(u[idx], self.config.Rk), u[idx])))
+                else:
+                    cost[i] = cost[i-1] + 1 + (np.dot(np.dot(u[idx], self.config.Rk), u[idx]) + \
+                                                        np.dot(np.dot(u[idx] - u[idx - 1], self.config.Rdk), u[idx] - u[idx - 1]))
+        else:
+            # Cost is simply linearly increasing with time, but flipped
+            cost = np.arange(len(x), 0, -1)
 
         # Finally flip the cost to have correct order
         return np.flip(cost).tolist()
@@ -348,7 +352,16 @@ class STMPCPlanner:
         # Finally flip the cost to have correct order
         return np.flip(cost).tolist()
 
-    def add_safe_trajectory(self, x, u):
+    def recompute_covariance(self, covariance_function):
+        """
+        :param covariance_function: function that computes the covariance of the state
+        :return: None
+        """
+        self.SS_covariance = []
+        for safe_state in range(len(self.SS_cartesian)):
+            self.SS_covariance.append(covariance_function(safe_state))
+
+    def add_safe_trajectory(self, x, u, cov_cl, covariance_function=None):
 
         self.LapTimes.append(len(x))
         # Add the feasible trajectory x and the associated input sequence u to the safe set
@@ -359,6 +372,11 @@ class STMPCPlanner:
             pose_frenet = self.track.cartesian_to_frenet(np.array([state[0], state[1], state[3]]))
             x_frenet.append(np.array([pose_frenet[0], pose_frenet[1], state[2], pose_frenet[2], state[4], state[5], state[6]]))
 
+        if len(cov_cl) == 0:
+            if covariance_function is not None:
+                for state, control in zip(x,u):
+                    covariance = covariance_function(state, control)
+                    self.SS_covariance.append(covariance.numpy())
 
         self.SS_frenet.append(copy.copy(x_frenet))
         self.uSS.append(copy.copy(u))

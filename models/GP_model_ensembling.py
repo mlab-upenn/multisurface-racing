@@ -70,9 +70,11 @@ class GPEnsembleModel:
 
         self.x_measurements = [[] for i in range(6)]
         self.y_measurements = [[] for i in range(3)]
+        self.covariance_measurements = [[] for i in range(3)]
 
         self.x_samples = [[] for i in range(6)]
         self.y_samples = [[] for i in range(3)]
+        self.covariance_samples = [[] for i in range(3)]
 
         self.train_x_scaled = None
         self.train_y_scaled = None
@@ -406,7 +408,7 @@ class GPEnsembleModel:
                                            self.scaler_x[5].transform(control_input[1]),
                                            ], dtype=numpy.float32)).reshape((-1, 6)).cuda()
 
-        mean, lower, upper = self.predict_model_step(point)
+        mean, lower, upper, cov = self.predict_model_step(point)
         if len(lower.shape) == 1:
             lower = lower.reshape(1, -1)
             upper = upper.reshape(1, -1)
@@ -447,7 +449,7 @@ class GPEnsembleModel:
         predictions = self.gp_likelihood(self.gp_model(X_sample))
         confidence = predictions.confidence_region()
         return predictions.mean.cpu(), torch.squeeze(confidence[0].cpu()), torch.squeeze(
-            confidence[1].cpu())  # mean, lower, upper
+            confidence[1].cpu()), torch.squeeze(predictions.stddev.cpu())**2  # mean, lower, upper
 
     def add_new_datapoint(self, X_sample, Y_sample):
         """
@@ -729,3 +731,4 @@ class GPEnsembleModel:
 
         self.x_measurements = [[] for i in range(6)]
         self.y_measurements = [[] for i in range(3)]
+        self.covariance_measurements = [[] for i in range(3)]

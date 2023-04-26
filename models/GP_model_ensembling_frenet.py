@@ -76,9 +76,11 @@ class GPEnsembleModelFrenet:
 
         self.x_measurements = [[] for i in range(6)]
         self.y_measurements = [[] for i in range(3)]
+        self.covariance_measurements = [[] for i in range(3)]
 
         self.x_samples = [[] for i in range(6)]
         self.y_samples = [[] for i in range(3)]
+        self.covariance_samples = [[] for i in range(3)]
 
         self.train_x_scaled = None
         self.train_y_scaled = None
@@ -154,7 +156,7 @@ class GPEnsembleModelFrenet:
         s, ey, vx, eyaw, vy, yaw_rate, steering_angle = state
 
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
-            mean, lower, upper = self.scale_and_predict_model_step(state, control_input)
+            mean, lower, upper, cov = self.scale_and_predict_model_step(state, control_input)
 
         curvature = 0  # TODO variable curvature
         curvature = self.track.get_curvature_at_s(s)
@@ -169,6 +171,15 @@ class GPEnsembleModelFrenet:
         f[6] = delta_v
 
         return f
+
+    def get_covariance(self, state, control_input):
+        if self.trained:
+            with torch.no_grad(), gpytorch.settings.fast_pred_var():
+                # start = time.time()
+                _, _, _, cov = self.scale_and_predict_model_step(state, control_input)
+                return cov
+        else:
+            return None
 
     def batch_get_model_matrix(self, state_vec, control_vec):
         s, ey, vx, eyaw, vy, yaw_rate, steering_angle = state_vec
@@ -204,7 +215,7 @@ class GPEnsembleModelFrenet:
 
                 # x, y, vx, yaw angle, vy, yaw rate, steering angle
                 # start = time.time()
-                mean, lower, upper = self.scale_and_predict_model_step(state_vec, control_vec)
+                mean, lower, upper, cov = self.scale_and_predict_model_step(state_vec, control_vec)
                 # end = time.time()
                 # self.logger.debug(end - start)
 
@@ -468,7 +479,7 @@ class GPEnsembleModelFrenet:
                                  self.scaler_y[2].inverse_transform(upper[:, 2]).detach().numpy(),
                                  ])
 
-        return scaled_mean, scaled_lower, scaled_upper
+        return scaled_mean, scaled_lower, scaled_upper, cov
 
     def for_jacobian_comp(self, x):
         x = (x - self.means) / self.std
@@ -490,7 +501,7 @@ class GPEnsembleModelFrenet:
         predictions = self.gp_likelihood(self.gp_model(X_sample))
         confidence = predictions.confidence_region()
         return predictions.mean.cpu(), torch.squeeze(confidence[0].cpu()), torch.squeeze(
-            confidence[1].cpu()), predictions.stddev**2  # mean, lower, upper
+            confidence[1].cpu()), torch.squeeze(predictions.stddev.cpu())**2  # mean, lower, upper
 
     def add_new_datapoint(self, X_sample, Y_sample):
         """
@@ -643,7 +654,7 @@ class GPEnsembleModelFrenet:
                 control_vect = np.array([self.x_measurements[4], self.x_measurements[5]])
 
                 with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                    mean, lower, upper = self.scale_and_predict_model_step(state_vect, control_vect)
+                    mean, lower, upper, cov = self.scale_and_predict_model_step(state_vect, control_vect)
 
                 if i <= num_of_new_samples / 4.0:
                     errors = abs(upper[2] - mean[2])

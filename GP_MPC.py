@@ -185,6 +185,8 @@ def main():  # after launching this you can run visualization.py to see the resu
     
     xcl = []
     ucl = []
+    cov_cl = []
+
     laps_done = 0
 
     laps_before_LMPC = 5
@@ -307,7 +309,11 @@ def main():  # after launching this you can run visualization.py to see the resu
 
         if gp_model_trained:
             with torch.no_grad(), gpytorch.settings.fast_pred_var():
-                mean, lower, upper = planner_gp_mpc.model.scale_and_predict_model_step(vehicle_state, [u[0] * planner_gp_mpc.config.MASS, u[1]])
+                mean, lower, upper, covariance = planner_gp_mpc.model.scale_and_predict_model_step(vehicle_state, [u[0] * planner_gp_mpc.config.MASS, u[1]])
+                cov_cl.append(covariance)
+        else:
+            covariance = None
+
 
         # set correct friction to the environment
         if use_dyn_friction:
@@ -412,9 +418,13 @@ def main():  # after launching this you can run visualization.py to see the resu
                 json.dump(log_dataset, f)
 
         if obs['lap_counts'][0] - 1 == laps_done:
-            planner_gp_mpc.add_safe_trajectory(xcl, ucl)
+            if gp_model_trained:
+                planner_gp_mpc.add_safe_trajectory(xcl, ucl, cov_cl, planner_gp_mpc.model.get_covariance)
+            else:
+                planner_gp_mpc.add_safe_trajectory(xcl, ucl, cov_cl)
             xcl = []
             ucl = []
+            cov_cl = []
             laps_done += 1
             main_logger.debug('%d Laps Done' % laps_done)
 
