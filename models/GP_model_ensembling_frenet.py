@@ -508,21 +508,24 @@ class GPEnsembleModelFrenet:
         else:
             self.y_measurements = np.vstack((self.y_measurements, Y_sample))
 
+
     def init_gp(self):
-        train_x = torch.tensor([self.x_measurements[k] for k in range(6)])
-        train_y = torch.tensor([self.y_measurements[k] for k in range(3)])
+        # train_x = torch.tensor([self.x_measurements[k] for k in range(6)])
+        # train_y = torch.tensor([self.y_measurements[k] for k in range(3)])
+        train_x = torch.from_numpy(self.x_measurements)
+        train_y = torch.from_numpy(self.y_measurements)
         train_y = train_y.contiguous()
 
-        train_x_scaled = torch.transpose(torch.vstack((self.scaler_x[0].fit_transform(train_x[0]),
-                                                       self.scaler_x[1].fit_transform(train_x[1]),
-                                                       self.scaler_x[2].fit_transform(train_x[2]),
-                                                       self.scaler_x[3].fit_transform(train_x[3]),
-                                                       self.scaler_x[4].fit_transform(train_x[4]),
-                                                       self.scaler_x[5].fit_transform(train_x[5]),)), 0, 1).cuda()
+        train_x_scaled = torch.transpose(torch.vstack((self.scaler_x[0].fit_transform(train_x[:, 0]),
+                                                       self.scaler_x[1].fit_transform(train_x[:, 1]),
+                                                       self.scaler_x[2].fit_transform(train_x[:, 2]),
+                                                       self.scaler_x[3].fit_transform(train_x[:, 3]),
+                                                       self.scaler_x[4].fit_transform(train_x[:, 4]),
+                                                       self.scaler_x[5].fit_transform(train_x[:, 5]),)), 0, 1).cuda()
 
-        train_y_scaled = torch.transpose(torch.vstack((self.scaler_y[0].fit_transform(train_y[0]),
-                                                       self.scaler_y[1].fit_transform(train_y[1]),
-                                                       self.scaler_y[2].fit_transform(train_y[2]),)), 0, 1).cuda()
+        train_y_scaled = torch.transpose(torch.vstack((self.scaler_y[0].fit_transform(train_y[:, 0]),
+                                                       self.scaler_y[1].fit_transform(train_y[:, 1]),
+                                                       self.scaler_y[2].fit_transform(train_y[:, 2]),)), 0, 1).cuda()
 
         self.gp_likelihood = gpytorch.likelihoods.MultitaskGaussianLikelihood(num_tasks=3)
         self.gp_model = BatchIndependentMultitaskGPModel(train_x_scaled, train_y_scaled, self.gp_likelihood)
@@ -596,7 +599,6 @@ class GPEnsembleModelFrenet:
         self.gp_model.eval()
         self.gp_likelihood.eval()
         self.trained = True
-        print(len(self.x_samples[0]))
 
     def train_gp_min_variance(self, num_of_new_samples=40):
         st_model = None
@@ -605,14 +607,14 @@ class GPEnsembleModelFrenet:
             torch.cuda.empty_cache()
             if not self.trained:
                 if self.x_samples is None:
-                    self.x_samples = self.x_measurements[:2,:].copy()
+                    self.x_samples = self.x_measurements[:2, :].copy()
                 else:
-                    self.x_samples = np.vstack((self.x_samples, self.x_measurements[:2,:]))
+                    self.x_samples = np.vstack((self.x_samples, self.x_measurements[:2, :]))
 
                 if self.y_samples is None:
-                    self.y_samples = self.y_measurements[:2,:].copy()
+                    self.y_samples = self.y_measurements[:2, :].copy()
                 else:
-                    self.y_samples = np.vstack((self.y_samples, self.y_measurements[:2,:]))
+                    self.y_samples = np.vstack((self.y_samples, self.y_measurements[:2, :]))
 
                 # Delete stacked measurements using numpy delete
                 self.x_measurements = np.delete(self.x_measurements, [0, 1], axis=0)
@@ -630,7 +632,7 @@ class GPEnsembleModelFrenet:
                     self.x_measurements[:, 2],
                     self.x_measurements[:, 3],
                 ])
-                control_vect = np.array([self.x_measurements[4], self.x_measurements[5]])
+                control_vect = np.array([self.x_measurements[:, 4], self.x_measurements[:, 5]])
 
                 with torch.no_grad(), gpytorch.settings.fast_pred_var():
                     mean, lower, upper = self.scale_and_predict_model_step(state_vect, control_vect)
@@ -645,7 +647,7 @@ class GPEnsembleModelFrenet:
                 #     errors = np.abs((upper[0] - mean[0]) / self.scaler_y[0].std) + np.abs(
                 #         (upper[1] - mean[1]) / self.scaler_y[1].std) + np.abs((upper[2] - mean[2]) / self.scaler_y[2].std)
                 else:
-                    errors = abs(mean[1] - self.y_measurements[1])
+                    errors = abs(mean[1] - self.y_measurements[:, 1])
                     # errors = 1.0 - abs(upper[1] - mean[1])
 
                 if np.max(errors.shape) == 0:
@@ -653,14 +655,15 @@ class GPEnsembleModelFrenet:
 
                 idx = np.argmax(errors)
 
-                self.x_samples = np.hstack((self.x_samples, self.x_measurements[idx,:].reshape(-1,1)))
-                self.y_samples = np.hstack((self.y_samples, self.y_measurements[idx,:].reshape(-1,1)))
-                
+                self.x_samples = np.vstack(
+                    (self.x_samples, self.x_measurements[idx, :]))  # torch.Size([N, 6])
+                self.y_samples = np.vstack((self.y_samples, self.y_measurements[idx, :]))
+
                 self.x_measurements = np.delete(self.x_measurements, idx, axis=0)
                 self.y_measurements = np.delete(self.y_measurements, idx, axis=0)
 
-            train_x = torch.tensor(self.x_samples)
-            train_y = torch.tensor(self.y_samples)
+            train_x = torch.from_numpy(self.x_samples)
+            train_y = torch.from_numpy(self.y_samples)
             train_y = train_y.contiguous()
 
             if self.train_x_scaled is not None and self.train_y_scaled is not None:
@@ -671,16 +674,18 @@ class GPEnsembleModelFrenet:
                 gc.collect()
                 torch.cuda.empty_cache()
 
-            self.train_x_scaled = torch.transpose(torch.vstack((self.scaler_x[0].fit_transform(train_x[:,0]),
-                                                                self.scaler_x[1].fit_transform(train_x[:,1]),
-                                                                self.scaler_x[2].fit_transform(train_x[:,2]),
-                                                                self.scaler_x[3].fit_transform(train_x[:,3]),
-                                                                self.scaler_x[4].fit_transform(train_x[:,4]),
-                                                                self.scaler_x[5].fit_transform(train_x[:,5]),)), 0, 1).cuda()
+            self.train_x_scaled = torch.transpose(torch.vstack((self.scaler_x[0].fit_transform(train_x[:, 0]),
+                                                                self.scaler_x[1].fit_transform(train_x[:, 1]),
+                                                                self.scaler_x[2].fit_transform(train_x[:, 2]),
+                                                                self.scaler_x[3].fit_transform(train_x[:, 3]),
+                                                                self.scaler_x[4].fit_transform(train_x[:, 4]),
+                                                                self.scaler_x[5].fit_transform(train_x[:, 5]),)), 0,
+                                                  1).cuda()
 
-            self.train_y_scaled = torch.transpose(torch.vstack((self.scaler_y[0].fit_transform(train_y[:,0]),
-                                                                self.scaler_y[1].fit_transform(train_y[:,1]),
-                                                                self.scaler_y[2].fit_transform(train_y[:,2]),)), 0, 1).cuda()
+            self.train_y_scaled = torch.transpose(torch.vstack((self.scaler_y[0].fit_transform(train_y[:, 0]),
+                                                                self.scaler_y[1].fit_transform(train_y[:, 1]),
+                                                                self.scaler_y[2].fit_transform(train_y[:, 2]),)), 0,
+                                                  1).cuda()
 
             if self.gp_likelihood is not None:
                 self.gp_likelihood.cpu()
@@ -767,7 +772,6 @@ class GPEnsembleModelFrenet:
             self.gp_model.eval()
             self.gp_likelihood.eval()
             self.trained = True
-            print(len(self.x_samples[0]))
 
         self.x_measurements = None
         self.y_measurements = None
