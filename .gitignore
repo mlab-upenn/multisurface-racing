@@ -54,6 +54,9 @@ docs/_build/
 # Ignore vscode config folder
 .vscode/
 
+# Ignore Pycharm and Clion folder
+.idea/
+
 # Custom
 dataset*
 log*

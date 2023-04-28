@@ -205,7 +205,7 @@ def main():  # after launching this you can run visualization.py to see the resu
 
         xcl.append(vehicle_state)  # add x0 to closed loop trajectory
 
-        mean, lower, upper = [[0.0, 0.0, 0.0], [0.0, 0.0, 0.0], [0.0, 0.0, 0.0]]
+        mean, lower, upper = [np.array([[0.0, 0.0, 0.0]]), np.array([[0.0, 0.0, 0.0]]), np.array([[0.0, 0.0, 0.0]])]
         u = [0.0, 0.0]
         tracking_error = 0.0
         total_var = 0.0
@@ -353,12 +353,12 @@ def main():  # after launching this you can run visualization.py to see the resu
             log['y'].append(env.sim.agents[0].state[1])
             log['vx'].append(env.sim.agents[0].state[3])
             log['v_ref'].append(waypoints[:, 5][0])
-            log['vx_mean'].append(float(mean[0]))
-            log['vx_var'].append(float(abs(mean[0] - lower[0])))
-            log['vy_mean'].append(float(mean[1]))
-            log['vy_var'].append(float(abs(mean[1] - lower[1])))
-            log['theta_mean'].append(float(mean[2]))
-            log['theta_var'].append(float(abs(mean[2] - lower[2])))
+            log['vx_mean'].append(float(mean[0,0]))
+            log['vx_var'].append(float(abs(mean[0,0] - lower[0,0])))
+            log['vy_mean'].append(float(mean[0,1]))
+            log['vy_var'].append(float(abs(mean[0,1] - lower[0,1])))
+            log['theta_mean'].append(float(mean[0,2]))
+            log['theta_var'].append(float(abs(mean[0,2] - lower[0,2])))
             log['true_vx'].append(env.sim.agents[0].state[3] - vehicle_state[2])
             log['true_vy'].append(env.sim.agents[0].state[10] - vehicle_state[4])
             log['true_yaw_rate'].append(env.sim.agents[0].state[5] - vehicle_state[5])
