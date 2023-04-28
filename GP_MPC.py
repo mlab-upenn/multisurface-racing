@@ -183,9 +183,9 @@ def main():  # after launching this you can run visualization.py to see the resu
 
     original_vel_profile = copy.deepcopy(waypoints[:, 5])
     
-    xcl = []
-    ucl = []
-    cov_cl = []
+    xcl = np.empty((0,7))
+    ucl = np.empty((0,2))
+    cov_cl = np.empty((0,3))
 
     laps_done = 0
 
@@ -201,9 +201,9 @@ def main():  # after launching this you can run visualization.py to see the resu
                                   env.sim.agents[0].state[5],  # yaw rate
                                   env.sim.agents[0].state[2],  # steering angle
                                   ])  # + np.random.randn(7) * 0.00001
-
-
-        xcl.append(vehicle_state)  # add x0 to closed loop trajectory
+        
+        # add x0 to closed loop trajectory
+        xcl = np.vstack((xcl, vehicle_state))
 
         mean, lower, upper = [np.array([[0.0, 0.0, 0.0]]), np.array([[0.0, 0.0, 0.0]]), np.array([[0.0, 0.0, 0.0]])]
         u = [0.0, 0.0]
@@ -310,7 +310,7 @@ def main():  # after launching this you can run visualization.py to see the resu
         if gp_model_trained:
             with torch.no_grad(), gpytorch.settings.fast_pred_var():
                 mean, lower, upper, covariance = planner_gp_mpc.model.scale_and_predict_model_step(vehicle_state, [u[0] * planner_gp_mpc.config.MASS, u[1]])
-                cov_cl.append(covariance)
+                cov_cl = np.vstack((cov_cl, covariance))
         else:
             covariance = None
 
@@ -368,8 +368,8 @@ def main():  # after launching this you can run visualization.py to see the resu
         # learning GPs
         u[0] = u[0] * planner_gp_mpc.config.MASS  # Acceleration to force
 
-        # Add to safe set
-        ucl.append(u)
+        # Add control input to ucl
+        ucl = np.vstack((ucl, u))        
 
         gather_data_every = 2
 
@@ -412,6 +412,9 @@ def main():  # after launching this you can run visualization.py to see the resu
                 log_dataset['Y1'] = planner_gp_mpc.model.y_samples[1]
                 log_dataset['Y2'] = planner_gp_mpc.model.y_samples[2]
 
+            # Recompute safe set covariance
+            planner_gp_mpc.recompute_covariance(planner_gp_mpc.model.get_covariance)
+
             with open('log01', 'w') as f:
                 json.dump(log, f)
             with open('testing_dataset', 'w') as f:
@@ -422,9 +425,9 @@ def main():  # after launching this you can run visualization.py to see the resu
                 planner_gp_mpc.add_safe_trajectory(xcl, ucl, cov_cl, planner_gp_mpc.model.get_covariance)
             else:
                 planner_gp_mpc.add_safe_trajectory(xcl, ucl, cov_cl)
-            xcl = []
-            ucl = []
-            cov_cl = []
+            xcl = np.empty((0,7))
+            ucl = np.empty((0,2))
+            cov_cl = np.empty((0,3))
             laps_done += 1
             main_logger.debug('%d Laps Done' % laps_done)
 

@@ -358,8 +358,9 @@ class STMPCPlanner:
         :return: None
         """
         self.SS_covariance = []
-        for safe_state in range(len(self.SS_cartesian)):
-            self.SS_covariance.append(covariance_function(safe_state))
+        for safe_trajectory, safe_controls in zip(self.SS_cartesian, self.uSS):
+            for safe_state, safe_input in zip(safe_trajectory, safe_controls):
+                self.SS_covariance.append(covariance_function(safe_state, safe_input))
 
     def add_safe_trajectory(self, x, u, cov_cl, covariance_function=None):
 
