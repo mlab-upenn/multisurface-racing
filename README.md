@@ -14,3 +14,15 @@ This repository is using multi-body full scale car version of the [F1/10 gym](ht
 * Kinematic_and_dynamic_MPC.py.py
     * You can choose from extended-kinematic MPC, dynamic (bicycle model) MPC, and pure pursuit controler.
     * Currently used for comparison against GP-MPC.
+
+## Citing
+If you find this Controller useful, please consider citing:
+
+```
+@article{nagy2023ensemble,
+  title={Ensemble Gaussian Processes for Adaptive Autonomous Driving on Multi-friction Surfaces},
+  author={Nagy, Tom{\'a}{\v{s}} and Amine, Ahmad and Nghiem, Truong X and Rosolia, Ugo and Zang, Zirui and Mangharam, Rahul},
+  journal={arXiv preprint arXiv:2303.13694},
+  year={2023}
+}
+```
