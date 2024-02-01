@@ -10,7 +10,7 @@ This repository is using multi-body full scale car version of the [F1/10 gym](ht
     * After every lap, it saves the dataset generated from driving on the track to a file called "testing_dataset.json".
 * GP_MPC_eval.py
     * Loads in the dataset created by GP_MPC.py and retrains the GP on this dataset.
-    * THe trained GP(s) are then evaluated for prediction error.
+    * The trained GP(s) are then evaluated for prediction error.
 * Kinematic_and_dynamic_MPC.py.py
     * You can choose from extended-kinematic MPC, dynamic (bicycle model) MPC, and pure pursuit controler.
     * Currently used for comparison against GP-MPC.
